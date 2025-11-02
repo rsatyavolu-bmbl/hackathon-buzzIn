@@ -1,0 +1,52 @@
+
+<resources>
+    <string name="app_name">BuzzIn</string>
+    
+    <!-- General -->
+    <string name="app_tagline">Connect. Right Here. Right Now.</string>
+    
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_buzz_in">Buzz In</string>
+    <string name="nav_matches">Matches</string>
+    <string name="nav_profile">Profile</string>
+    <string name="nav_chat">Chat</string>
+    
+    <!-- Actions -->
+    <string name="action_buzz_in">Buzz In</string>
+    <string name="action_buzz_out">Buzz Out</string>
+    <string name="action_match">Match</string>
+    <string name="action_pass">Pass</string>
+    <string name="action_chat">Chat</string>
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_login">Login</string>
+    <string name="action_signup">Sign Up</string>
+    <string name="action_logout">Logout</string>
+    
+    <!-- Location -->
+    <string name="location_permission_title">Location Permission Required</string>
+    <string name="location_permission_message">BuzzIn needs your location to show nearby people and places</string>
+    <string name="location_searching">Searching for nearby locations…</string>
+    <string name="location_not_found">No locations found nearby</string>
+    
+    <!-- Matches -->
+    <string name="matches_empty">No matches yet. Buzz in to start meeting people!</string>
+    <string name="matches_new">New Match!</string>
+    
+    <!-- Profile -->
+    <string name="profile_edit">Edit Profile</string>
+    <string name="profile_name">Name</string>
+    <string name="profile_bio">Bio</string>
+    <string name="profile_interests">Interests</string>
+    
+    <!-- Errors -->
+    <string name="error_generic">Something went wrong. Please try again.</string>
+    <string name="error_network">Network error. Please check your connection.</string>
+    <string name="error_location">Unable to get your location.</string>
+    
+    <!-- Notifications -->
+    <string name="notification_new_match">You have a new match nearby!</string>
+    <string name="notification_nearby_user">Someone just buzzed in near you!</string>
+</resources>
+
