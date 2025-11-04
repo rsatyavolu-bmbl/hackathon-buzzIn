@@ -55,8 +55,34 @@ fun MapScreen() {
     }
     
     var selectedPlace by remember { mutableStateOf<SocialPlace?>(null) }
+    var showLocationDetail by remember { mutableStateOf(false) }
     // Disable My Location for now (requires runtime permissions)
     var showMyLocation by remember { mutableStateOf(false) }
+
+    // Show LocationDetailScreen when "Buzz In" is clicked
+    if (showLocationDetail && selectedPlace != null) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.White
+        ) {
+            LocationDetailScreen(
+                locationId = selectedPlace!!.id,
+                locationName = selectedPlace!!.name,
+                locationType = when(selectedPlace!!.type) {
+                    PlaceType.COFFEE -> LocationType.COFFEE
+                    PlaceType.RESTAURANT -> LocationType.RESTAURANT
+                    PlaceType.BAR -> LocationType.RESTAURANT
+                    PlaceType.CONCERT -> LocationType.RESTAURANT
+                },
+                buzzInCount = selectedPlace!!.activeUsers,
+                onBack = {
+                    showLocationDetail = false
+                    selectedPlace = null
+                }
+            )
+        }
+        return
+    }
 
     Box(
         modifier = Modifier
@@ -229,7 +255,7 @@ fun MapScreen() {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
-                            onClick = { /* Buzz In action */ },
+                            onClick = { showLocationDetail = true },
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Buzz In")
