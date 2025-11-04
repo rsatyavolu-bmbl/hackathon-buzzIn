@@ -1,4 +1,4 @@
-
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">BuzzIn</string>
     
@@ -49,4 +49,3 @@
     <string name="notification_new_match">You have a new match nearby!</string>
     <string name="notification_nearby_user">Someone just buzzed in near you!</string>
 </resources>
-
