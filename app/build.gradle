@@ -3,6 +3,13 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// Load local.properties
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localProperties.load(it) }
+}
+
 android {
     namespace 'com.buzzin.app'
     compileSdk 34
@@ -18,9 +25,17 @@ android {
         vectorDrawables {
             useSupportLibrary true
         }
+<<<<<<< HEAD
 
         // Pass the Maps API key to the manifest
         manifestPlaceholders = [MAPS_API_KEY: project.findProperty('MAPS_API_KEY') ?: '']
+=======
+        
+        // Read API keys from local.properties
+        manifestPlaceholders = [
+            MAPS_API_KEY: localProperties.getProperty('MAPS_API_KEY', '')
+        ]
+>>>>>>> 849e52d8a4a4ef1d7742aeb56898e16fa018f24a
     }
 
     buildTypes {
@@ -89,6 +104,10 @@ dependencies {
     // Location Services
     implementation 'com.google.android.gms:play-services-location:21.0.1'
     implementation 'com.google.android.gms:play-services-maps:18.2.0'
+    
+    // Google Maps Compose
+    implementation 'com.google.maps.android:maps-compose:4.3.0'
+    implementation 'com.google.maps.android:maps-compose-utils:4.3.0'
     
     // Networking
     implementation 'com.squareup.retrofit2:retrofit:2.9.0'
