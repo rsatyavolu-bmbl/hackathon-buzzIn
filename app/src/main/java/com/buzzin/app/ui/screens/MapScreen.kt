@@ -38,16 +38,20 @@ enum class PlaceType {
 
 // Sample places near 41st and Lamar in Austin, TX
 val socialPlaces = listOf(
-    SocialPlace(1, "Houndstooth Coffee", PlaceType.COFFEE, LatLng(30.3106, -97.74), 7),
+    SocialPlace(1, "Houndstooth Coffee", PlaceType.COFFEE, LatLng(30.3106, -97.74), 4),
     SocialPlace(2, "Draught House Pub", PlaceType.BAR, LatLng(30.3111, -97.7428), 9),
-    SocialPlace(3, "Central Market North Lamar", PlaceType.RESTAURANT, LatLng(30.3077, -97.7399), 5),
-    SocialPlace(4, "Mazur Coffee", PlaceType.COFFEE, LatLng(30.31165, -97.7423), 6),
-    SocialPlace(5, "Rudy's BBQ", PlaceType.RESTAURANT, LatLng(30.3076, -97.74195), 8)
+    SocialPlace(3, "Central Market North Lamar", PlaceType.RESTAURANT, LatLng(30.3077, -97.7399), 4),
+    SocialPlace(4, "Mazur Coffee", PlaceType.COFFEE, LatLng(30.31165, -97.7423), 3),
+    SocialPlace(5, "Rudy's BBQ", PlaceType.RESTAURANT, LatLng(30.3076, -97.74195), 7)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MapScreen() {
+fun MapScreen(
+    buzzInState: com.buzzin.app.BuzzInState = com.buzzin.app.BuzzInState(),
+    onBuzzIn: (Int, String, LocationType, Int) -> Unit = { _, _, _, _ -> },
+    onBuzzOut: () -> Unit = {}
+) {
     // Default location: 41st and Lamar, Austin, TX
     val center41stAndLamar = LatLng(30.30914, -97.7412)
     val cameraPositionState = rememberCameraPositionState {
@@ -59,7 +63,24 @@ fun MapScreen() {
     // Disable My Location for now (requires runtime permissions)
     var showMyLocation by remember { mutableStateOf(false) }
 
-    // Show LocationDetailScreen when "Buzz In" is clicked
+    // Show LocationDetailScreen if user is buzzed in
+    if (buzzInState.isBuzzedIn) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.White
+        ) {
+            LocationDetailScreen(
+                locationId = buzzInState.locationId ?: 0,
+                locationName = buzzInState.locationName ?: "",
+                locationType = buzzInState.locationType ?: LocationType.RESTAURANT,
+                buzzInCount = buzzInState.buzzInCount,
+                onBack = onBuzzOut
+            )
+        }
+        return
+    }
+
+    // Show LocationDetailScreen when "Buzz In" is clicked from map
     if (showLocationDetail && selectedPlace != null) {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -76,6 +97,8 @@ fun MapScreen() {
                 },
                 buzzInCount = selectedPlace!!.activeUsers,
                 onBack = {
+                    // Buzz out
+                    onBuzzOut()
                     showLocationDetail = false
                     selectedPlace = null
                 }
@@ -255,7 +278,17 @@ fun MapScreen() {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
-                            onClick = { showLocationDetail = true },
+                            onClick = {
+                                // Call onBuzzIn callback with location details
+                                val locationType = when(place.type) {
+                                    PlaceType.COFFEE -> LocationType.COFFEE
+                                    PlaceType.RESTAURANT -> LocationType.RESTAURANT
+                                    PlaceType.BAR -> LocationType.RESTAURANT
+                                    PlaceType.CONCERT -> LocationType.RESTAURANT
+                                }
+                                onBuzzIn(place.id, place.name, locationType, place.activeUsers)
+                                showLocationDetail = true
+                            },
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Buzz In")

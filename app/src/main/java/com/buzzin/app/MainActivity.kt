@@ -28,9 +28,19 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// State for tracking user's buzzed in location
+data class BuzzInState(
+    val isBuzzedIn: Boolean = false,
+    val locationId: Int? = null,
+    val locationName: String? = null,
+    val locationType: com.buzzin.app.ui.screens.LocationType? = null,
+    val buzzInCount: Int = 0
+)
+
 @Composable
 fun MainScreen() {
     var selectedTab by remember { mutableStateOf(1) } // Default to Discover (index 1)
+    var buzzInState by remember { mutableStateOf(BuzzInState()) }
 
     Scaffold(
         bottomBar = {
@@ -84,7 +94,21 @@ fun MainScreen() {
             when (selectedTab) {
                 0 -> ProfileScreen()
                 1 -> HomeScreen()
-                2 -> MapScreen()
+                2 -> MapScreen(
+                    buzzInState = buzzInState,
+                    onBuzzIn = { locationId, locationName, locationType, buzzInCount ->
+                        buzzInState = BuzzInState(
+                            isBuzzedIn = true,
+                            locationId = locationId,
+                            locationName = locationName,
+                            locationType = locationType,
+                            buzzInCount = buzzInCount
+                        )
+                    },
+                    onBuzzOut = {
+                        buzzInState = BuzzInState()
+                    }
+                )
                 3 -> SettingsScreen()
                 4 -> SettingsScreen()
             }

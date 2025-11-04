@@ -164,21 +164,11 @@ fun LocationDetailScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                
                 Text(
                     text = locationName,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp)
+                    modifier = Modifier.weight(1f)
                 )
                 
                 Surface(
@@ -214,28 +204,60 @@ fun LocationDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            // Location Type Badge
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = Color(0xFFF1F5F9),
-                modifier = Modifier.padding(top = 12.dp, bottom = 12.dp)
+            // Buzzed In Status Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 12.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFACC15))
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        tint = Color(0xFF64748B),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = typeLabel,
-                        color = Color(0xFF475569),
-                        fontSize = 14.sp
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column {
+                            Text(
+                                text = "You're buzzed in!",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Others can see your profile here",
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = onBack,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color(0xFFCA8A04)
+                        ),
+                        modifier = Modifier.height(36.dp)
+                    ) {
+                        Text(
+                            text = "Buzz Out",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 
@@ -259,15 +281,15 @@ fun LocationDetailScreen(
                 text = "People who buzzed in",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(vertical = 8.dp)
             )
 
             // Horizontal Pager for Profile Cards
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(600.dp)
-                    .padding(bottom = 16.dp),
+                    .height(500.dp)
+                    .padding(bottom = 8.dp),
                 contentAlignment = Alignment.TopCenter
             ) {
                 HorizontalPager(
@@ -275,12 +297,12 @@ fun LocationDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth(0.88f)
                         .fillMaxHeight(),
-                    pageSpacing = 16.dp
+                    pageSpacing = 8.dp
                 ) { page ->
                     val profile = profiles[page]
                     ProfileCard(
                         profile = profile,
-                        onClick = { 
+                        onClick = {
                             selectedProfile = profile
                         },
                         onAccept = {
@@ -300,19 +322,19 @@ fun LocationDetailScreen(
                     )
                 }
             }
-            
+
             // Page Indicator
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 repeat(profiles.size) { index ->
                     Box(
                         modifier = Modifier
-                            .size(6.dp)
+                            .size(8.dp)
                             .padding(horizontal = 3.dp)
                             .background(
                                 color = if (index == pagerState.currentPage) Color(0xFF94A3B8) else Color(0xFFCBD5E1),
