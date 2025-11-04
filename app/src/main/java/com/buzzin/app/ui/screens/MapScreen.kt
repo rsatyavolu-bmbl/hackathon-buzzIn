@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
@@ -96,7 +97,7 @@ fun MapScreen() {
                     mapType = MapType.NORMAL
                 ),
                 uiSettings = MapUiSettings(
-                    zoomControlsEnabled = false,
+                    zoomControlsEnabled = true,
                     myLocationButtonEnabled = false,
                     compassEnabled = true,
                     scrollGesturesEnabled = true,
@@ -105,6 +106,14 @@ fun MapScreen() {
                     rotationGesturesEnabled = true
                 )
             ) {
+                // User's current location marker
+                Marker(
+                    state = MarkerState(position = center41stAndLamar),
+                    title = "You are here",
+                    snippet = "Your current location",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)
+                )
+
                 // Add markers for each social place
                 socialPlaces.forEach { place ->
                     Marker(
@@ -128,7 +137,7 @@ fun MapScreen() {
             },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(16.dp),
+                .padding(bottom = 88.dp, end = 16.dp),
             containerColor = MaterialTheme.colorScheme.primary
         ) {
             Icon(
