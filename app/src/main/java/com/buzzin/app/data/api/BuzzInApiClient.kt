@@ -1,6 +1,7 @@
 package com.buzzin.app.data.api
 
 import android.util.Log
+import com.amplifyframework.api.graphql.GraphQLRequest
 import com.amplifyframework.api.graphql.SimpleGraphQLRequest
 import com.amplifyframework.core.Amplify
 import com.buzzin.app.data.model.*
@@ -226,7 +227,11 @@ class BuzzInApiClient {
     // Helper functions
     private suspend fun <T> executeQuery(query: String): ApiResult<T> = suspendCancellableCoroutine { continuation ->
         Amplify.API.query(
-            SimpleGraphQLRequest<String>(query, String::class.java),
+            SimpleGraphQLRequest<String>(
+                query,
+                String::class.java,
+                GraphQLRequest.VariablesSerializer { "{}" }
+            ),
             { response ->
                 Log.d(TAG, "Query success: ${response.data}")
                 try {
@@ -244,7 +249,11 @@ class BuzzInApiClient {
 
     private suspend fun <T> executeMutation(mutation: String): ApiResult<T> = suspendCancellableCoroutine { continuation ->
         Amplify.API.mutate(
-            SimpleGraphQLRequest<String>(mutation, String::class.java),
+            SimpleGraphQLRequest<String>(
+                mutation,
+                String::class.java,
+                GraphQLRequest.VariablesSerializer { "{}" }
+            ),
             { response ->
                 Log.d(TAG, "Mutation success: ${response.data}")
                 try {

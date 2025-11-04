@@ -1,0 +1,7 @@
+{
+  "projectName": "buzzin",
+  "envName": "dev",
+  "defaultEditor": "code",
+  "appType": "android",
+  "resDir": "app/src/main/res"
+}
