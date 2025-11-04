@@ -18,6 +18,9 @@ android {
         vectorDrawables {
             useSupportLibrary true
         }
+
+        // Pass the Maps API key to the manifest
+        manifestPlaceholders = [MAPS_API_KEY: project.findProperty('MAPS_API_KEY') ?: '']
     }
 
     buildTypes {
