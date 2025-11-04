@@ -31,11 +31,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Google Maps API Key -->
+        <!-- Google Maps API Key (Add your key to local.properties) -->
+        <!-- Commented out until API key is configured -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="${MAPS_API_KEY}" />
-        
     </application>
 
 </manifest>

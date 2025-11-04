@@ -25,7 +25,7 @@ android {
         vectorDrawables {
             useSupportLibrary true
         }
-        
+
         // Read API keys from local.properties
         manifestPlaceholders = [
             MAPS_API_KEY: localProperties.getProperty('MAPS_API_KEY', '')
