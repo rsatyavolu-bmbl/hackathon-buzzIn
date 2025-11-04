@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # Android APK Builder and Server
+  buzzin-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: buzzin-apk-server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./app/build/outputs/apk:/app/app/build/outputs/apk
+      - gradle-cache:/root/.gradle
+    networks:
+      - buzzin-network
+    environment:
+      - JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+    command: >
+      bash -c "
+        echo '🚀 Building BuzzIn APK...' &&
+        ./gradlew assembleDebug &&
+        echo '✅ Build complete! APK size:' &&
+        ls -lh app/build/outputs/apk/debug/app-debug.apk &&
+        echo '📡 Starting APK server on http://0.0.0.0:8080' &&
+        echo '📱 Download APK at: http://localhost:8080/debug/app-debug.apk' &&
+        cd app/build/outputs/apk &&
+        python3 -m http.server 8080 --bind 0.0.0.0
+      "
+
+  # Optional: Nginx reverse proxy for better file serving
+  buzzin-nginx:
+    image: nginx:alpine
+    container_name: buzzin-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./app/build/outputs/apk:/usr/share/nginx/html:ro
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - buzzin-network
+    depends_on:
+      - buzzin-builder
+    profiles:
+      - production
+
+volumes:
+  gradle-cache:
+
+networks:
+  buzzin-network:
+    driver: bridge

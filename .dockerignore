@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Build outputs
+build/
+.gradle/
+*.iml
+local.properties
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker/
+
+# Documentation
+*.md
+!README.md
+
+# Amplify
+amplify/\#current-cloud-backend
+amplify/.config/local-*
+amplify/logs
+amplify/mock-data
+amplify/backend/.temp
+aws-exports.js
+amplifyconfiguration.json
+
+# Secrets
+*.keystore
+*.jks
+google-services.json
