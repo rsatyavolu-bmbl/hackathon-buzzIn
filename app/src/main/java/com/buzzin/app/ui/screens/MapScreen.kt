@@ -35,25 +35,25 @@ enum class PlaceType {
     CONCERT
 }
 
-// Sample places in San Francisco area
+// Sample places near 41st and Lamar in Austin, TX
 val socialPlaces = listOf(
-    SocialPlace(1, "Blue Bottle Coffee", PlaceType.COFFEE, LatLng(37.7749, -122.4194), 5),
-    SocialPlace(2, "The Grove", PlaceType.RESTAURANT, LatLng(37.7739, -122.4312), 12),
-    SocialPlace(3, "Philz Coffee", PlaceType.COFFEE, LatLng(37.7858, -122.4064), 8),
-    SocialPlace(4, "Zuni Café", PlaceType.RESTAURANT, LatLng(37.7764, -122.4234), 15),
-    SocialPlace(5, "Sightglass Coffee", PlaceType.COFFEE, LatLng(37.7699, -122.4102), 6),
-    SocialPlace(6, "Foreign Cinema", PlaceType.RESTAURANT, LatLng(37.7599, -122.4194), 10),
-    SocialPlace(7, "Ritual Coffee", PlaceType.COFFEE, LatLng(37.7489, -122.4194), 4),
-    SocialPlace(8, "Nopa", PlaceType.RESTAURANT, LatLng(37.7749, -122.4394), 18)
+    SocialPlace(1, "Kerbey Lane Cafe", PlaceType.RESTAURANT, LatLng(30.2978, -97.7428), 8),
+    SocialPlace(2, "Thunderbird Coffee", PlaceType.COFFEE, LatLng(30.2965, -97.7345), 5),
+    SocialPlace(3, "Hyde Park Bar & Grill", PlaceType.RESTAURANT, LatLng(30.3032, -97.7353), 12),
+    SocialPlace(4, "Quack's 43rd Street Bakery", PlaceType.COFFEE, LatLng(30.3012, -97.7283), 6),
+    SocialPlace(5, "Uchi", PlaceType.RESTAURANT, LatLng(30.2897, -97.7425), 15),
+    SocialPlace(6, "Central Market North Lamar", PlaceType.RESTAURANT, LatLng(30.3077, -97.7399), 10),
+    SocialPlace(7, "Alamo Drafthouse Village", PlaceType.BAR, LatLng(30.2945, -97.7425), 20),
+    SocialPlace(8, "Whole Foods Flagship", PlaceType.RESTAURANT, LatLng(30.2930, -97.7432), 18)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen() {
-    // Default location: San Francisco
-    val sanFrancisco = LatLng(37.7749, -122.4194)
+    // Default location: 41st and Lamar, Austin, TX
+    val center41stAndLamar = LatLng(30.30914, -97.7412)
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(sanFrancisco, 13f)
+        position = CameraPosition.fromLatLngZoom(center41stAndLamar, 14f)
     }
     
     var selectedPlace by remember { mutableStateOf<SocialPlace?>(null) }
@@ -126,8 +126,8 @@ fun MapScreen() {
         // Floating Action Button - My Location
         FloatingActionButton(
             onClick = {
-                // Center map on current location
-                cameraPositionState.position = CameraPosition.fromLatLngZoom(sanFrancisco, 13f)
+                // Center map on 41st and Lamar
+                cameraPositionState.position = CameraPosition.fromLatLngZoom(center41stAndLamar, 14f)
             },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
