@@ -5,6 +5,7 @@ Buzz-In to locations (a la Foursquare) and match with other Buzzed In members, h
 - **Frontend**: Android application (Kotlin/Java)
 - **Backend**: REST API services hosted on AWS Cloud
 - **Deployment**: AWS (Lambda, API Gateway, DynamoDB, etc.)
+- **Device Tracking**: Unique Application IDs for multi-device context management
 
 ## Setup Instructions for Developers
 
@@ -84,12 +85,37 @@ hackathon-buzzIn/
 ├── app/                    # Android application code
 │   ├── src/main/
 │   │   ├── java/          # Kotlin/Java source files
+│   │   │   ├── data/      # Data layer (repositories, API, device management)
+│   │   │   ├── ui/        # UI layer (screens, navigation, themes)
+│   │   │   └── ...
 │   │   └── res/           # Resources (layouts, strings, etc.)
 │   └── build.gradle       # App-level build configuration
 ├── service/               # Backend service code (AWS)
 ├── local.properties       # Local config (gitignored)
+├── DEVICE_ID_SYSTEM.md   # Device ID & context tracking documentation
 └── README.md             # This file
 ```
+
+### Key Features
+
+#### Device ID & Context Management
+The app automatically generates and manages unique identifiers for each device installation:
+- **Application ID**: Persistent UUID for tracking device context across app sessions
+- **User ID**: Links device to authenticated user account
+- **Session ID**: Tracks individual app sessions for analytics
+- **Multi-device support**: Users can buzz-in from multiple devices
+
+See [DEVICE_ID_SYSTEM.md](DEVICE_ID_SYSTEM.md) for complete documentation on:
+- How Application IDs work
+- Backend integration examples
+- API usage patterns
+- Multi-device scenarios
+
+#### Google Maps Integration
+- Interactive map with scrollable, zoomable interface
+- Location-based markers for coffee shops and restaurants
+- Real-time "buzz-in" status for nearby locations
+- Filter by place type (coffee, restaurant, etc.)
 
 ### Troubleshooting
 
@@ -101,3 +127,7 @@ hackathon-buzzIn/
 **Build errors?**
 - Make sure `sdk.dir` in `local.properties` points to your Android SDK
 - Verify Java JDK 17 is installed and `JAVA_HOME` is set correctly
+
+**Device ID issues?**
+- Check logs: `adb logcat | grep BuzzInApplication`
+- View stored IDs: See [DEVICE_ID_SYSTEM.md](DEVICE_ID_SYSTEM.md) troubleshooting section
