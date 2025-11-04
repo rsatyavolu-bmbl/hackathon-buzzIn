@@ -9,12 +9,30 @@ Buzz-In to locations (a la Foursquare) and match with other Buzzed In members, h
 
 ## Setup Instructions for Developers
 
-### Prerequisites
+### 🐳 Quick Start with Docker (Recommended)
+
+**Fastest way to get started - no SDK installation required!**
+
+```bash
+# 1. Start the server
+./docker-start.sh
+
+# 2. Download APK from your phone
+# Go to: http://YOUR_IP:8080/debug/app-debug.apk
+```
+
+See [DOCKER_SETUP.md](DOCKER_SETUP.md) for full Docker documentation.
+
+---
+
+### Manual Setup (Alternative)
+
+#### Prerequisites
 - Android Studio or Android SDK command-line tools
 - Java JDK 17
 - Google Maps API Key
 
-### Getting Started
+#### Getting Started
 
 1. **Clone the repository**
    ```bash
