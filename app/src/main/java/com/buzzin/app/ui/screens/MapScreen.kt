@@ -37,14 +37,11 @@ enum class PlaceType {
 
 // Sample places near 41st and Lamar in Austin, TX
 val socialPlaces = listOf(
-    SocialPlace(1, "Kerbey Lane Cafe", PlaceType.RESTAURANT, LatLng(30.2978, -97.7428), 8),
-    SocialPlace(2, "Thunderbird Coffee", PlaceType.COFFEE, LatLng(30.2965, -97.7345), 5),
-    SocialPlace(3, "Hyde Park Bar & Grill", PlaceType.RESTAURANT, LatLng(30.3032, -97.7353), 12),
-    SocialPlace(4, "Quack's 43rd Street Bakery", PlaceType.COFFEE, LatLng(30.3012, -97.7283), 6),
-    SocialPlace(5, "Uchi", PlaceType.RESTAURANT, LatLng(30.2897, -97.7425), 15),
-    SocialPlace(6, "Central Market North Lamar", PlaceType.RESTAURANT, LatLng(30.3077, -97.7399), 10),
-    SocialPlace(7, "Alamo Drafthouse Village", PlaceType.BAR, LatLng(30.2945, -97.7425), 20),
-    SocialPlace(8, "Whole Foods Flagship", PlaceType.RESTAURANT, LatLng(30.2930, -97.7432), 18)
+    SocialPlace(1, "Houndstooth Coffee", PlaceType.COFFEE, LatLng(30.3106, -97.74), 7),
+    SocialPlace(2, "Draught House Pub", PlaceType.BAR, LatLng(30.3111, -97.7428), 9),
+    SocialPlace(3, "Central Market North Lamar", PlaceType.RESTAURANT, LatLng(30.3077, -97.7399), 5),
+    SocialPlace(4, "Mazur Coffee", PlaceType.COFFEE, LatLng(30.31165, -97.7423), 6),
+    SocialPlace(5, "Rudy's BBQ", PlaceType.RESTAURANT, LatLng(30.3076, -97.74195), 8)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,7 +50,7 @@ fun MapScreen() {
     // Default location: 41st and Lamar, Austin, TX
     val center41stAndLamar = LatLng(30.30914, -97.7412)
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(center41stAndLamar, 14f)
+        position = CameraPosition.fromLatLngZoom(center41stAndLamar, 16f)
     }
     
     var selectedPlace by remember { mutableStateOf<SocialPlace?>(null) }
@@ -127,7 +124,7 @@ fun MapScreen() {
         FloatingActionButton(
             onClick = {
                 // Center map on 41st and Lamar
-                cameraPositionState.position = CameraPosition.fromLatLngZoom(center41stAndLamar, 14f)
+                cameraPositionState.position = CameraPosition.fromLatLngZoom(center41stAndLamar, 16f)
             },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
