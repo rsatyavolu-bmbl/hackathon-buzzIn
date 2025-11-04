@@ -1,0 +1,27 @@
+{
+  "dev": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-buzzin-dev-authRole",
+      "UnauthRoleName": "amplify-buzzin-dev-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::ACCOUNT_ID:role/amplify-buzzin-dev-authRole",
+      "UnauthRoleArn": "arn:aws:iam::ACCOUNT_ID:role/amplify-buzzin-dev-unauthRole",
+      "Region": "us-east-1"
+    },
+    "categories": {
+      "function": {
+        "getActiveUsersAtLocation": {
+          "deploymentBucketName": "amplify-buzzin-dev-deployment",
+          "s3Key": "amplify-builds/getActiveUsersAtLocation-latest-build.zip"
+        },
+        "listNearbyLocations": {
+          "deploymentBucketName": "amplify-buzzin-dev-deployment",
+          "s3Key": "amplify-builds/listNearbyLocations-latest-build.zip"
+        },
+        "performSwipe": {
+          "deploymentBucketName": "amplify-buzzin-dev-deployment",
+          "s3Key": "amplify-builds/performSwipe-latest-build.zip"
+        }
+      }
+    }
+  }
+}
