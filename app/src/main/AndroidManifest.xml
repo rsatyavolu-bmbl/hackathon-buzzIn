@@ -31,13 +31,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Google Maps API Key (Add your key to gradle.properties) -->
-        <!-- Commented out until API key is configured -->
-        <!--
+        <!-- Google Maps API Key -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="${MAPS_API_KEY}" />
-        -->
+        
     </application>
 
 </manifest>

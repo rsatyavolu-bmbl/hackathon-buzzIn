@@ -1,0 +1,24 @@
+## This file must *NOT* be checked into Version Control Systems,
+# as it contains information specific to your local configuration.
+#
+# INSTRUCTIONS FOR NEW DEVELOPERS:
+# 1. Copy this file and rename it to "local.properties"
+# 2. Update the sdk.dir path to point to your Android SDK location
+# 3. Add your own Google Maps API Key below
+#
+# Location of the Android SDK. This is only used by Gradle.
+# For customization when using a Version Control System, please read the
+# header note.
+#
+# Example paths:
+# macOS (Homebrew): /opt/homebrew/share/android-commandlinetools
+# macOS (Android Studio): /Users/YOUR_USERNAME/Library/Android/sdk
+# Linux: /home/YOUR_USERNAME/Android/Sdk
+# Windows: C:\Users\YOUR_USERNAME\AppData\Local\Android\Sdk
+sdk.dir=/path/to/your/android/sdk
+
+# Google Maps API Key (Private - Do not commit)
+# Get your own key from: https://console.cloud.google.com/
+# Follow the setup guide in README.md
+MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY_HERE
+
