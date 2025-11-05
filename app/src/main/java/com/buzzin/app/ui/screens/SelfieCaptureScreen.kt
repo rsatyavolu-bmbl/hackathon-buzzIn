@@ -1,5 +1,17 @@
 package com.buzzin.app.ui.screens
 
+import android.Manifest
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,12 +27,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
+import java.nio.ByteBuffer
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun SelfieCaptureScreen(
     profileName: String,
@@ -28,9 +52,14 @@ fun SelfieCaptureScreen(
     onBack: () -> Unit,
     onSelfieCaptured: () -> Unit
 ) {
-    var selfieCaptured by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    
+    var capturedImage by remember { mutableStateOf<Bitmap?>(null) }
     var showSuccessMessage by remember { mutableStateOf(false) }
     var selectedLocationText by remember { mutableStateOf<String?>(null) }
+    
+    val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     
     // Pre-defined location texts based on location type
     val locationOptions = if (locationType == "COFFEE") {
@@ -46,67 +75,79 @@ fun SelfieCaptureScreen(
             "🎵 By the stage area"
         )
     }
+    
+    // Request camera permission on launch
+    LaunchedEffect(Unit) {
+        if (!cameraPermissionState.status.isGranted) {
+            cameraPermissionState.launchPermissionRequest()
+        }
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // Camera Preview Placeholder
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF1E293B)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (!selfieCaptured) {
+        when {
+            !cameraPermissionState.status.isGranted -> {
+                // Permission not granted - show message
                 Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.CameraAlt,
                         contentDescription = "Camera",
-                        tint = Color.White.copy(alpha = 0.5f),
+                        tint = Color.White,
                         modifier = Modifier.size(80.dp)
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
                     Text(
-                        text = "Camera Preview",
-                        color = Color.White.copy(alpha = 0.5f),
-                        fontSize = 18.sp
-                    )
-                    Text(
-                        text = "Position yourself in the frame",
-                        color = Color.White.copy(alpha = 0.3f),
-                        fontSize = 14.sp
-                    )
-                }
-            } else {
-                // Captured selfie preview placeholder
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CameraAlt,
-                        contentDescription = "Captured Photo",
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(120.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Your Selfie",
+                        text = "Camera Permission Required",
                         color = Color.White,
                         fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Looking great!",
+                        text = "Please grant camera permission to take a selfie",
                         color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
                     )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = { cameraPermissionState.launchPermissionRequest() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFACC15)
+                        )
+                    ) {
+                        Text("Grant Permission")
+                    }
                 }
+            }
+            capturedImage != null -> {
+                // Show captured image
+                Image(
+                    bitmap = capturedImage!!.asImageBitmap(),
+                    contentDescription = "Captured selfie",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            else -> {
+                // Show camera preview
+                CameraPreview(
+                    context = context,
+                    lifecycleOwner = lifecycleOwner,
+                    onImageCaptured = { bitmap ->
+                        capturedImage = bitmap
+                    }
+                )
             }
         }
 
@@ -153,165 +194,167 @@ fun SelfieCaptureScreen(
         }
 
         // Bottom Controls
-        if (!selfieCaptured) {
-            // Capture Button
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 40.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Take a selfie to share with $profileName",
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 32.dp, vertical = 16.dp)
-                )
-                
-                FloatingActionButton(
-                    onClick = { selfieCaptured = true },
-                    modifier = Modifier.size(72.dp),
-                    containerColor = Color.White,
-                    shape = CircleShape
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CameraAlt,
-                        contentDescription = "Capture",
-                        tint = Color(0xFFFACC15),
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-            }
-        } else {
-            // Location Selection and Send/Retake Buttons
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.8f)
-                            )
-                        )
-                    )
-                    .padding(horizontal = 24.dp, vertical = 32.dp)
-            ) {
-                // Location Selection Title
-                Text(
-                    text = "Where are you?",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-                
-                // Location Options
+        if (cameraPermissionState.status.isGranted) {
+            if (capturedImage == null) {
+                // Capture Button
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 40.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    locationOptions.forEach { option ->
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    selectedLocationText = option
-                                },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (selectedLocationText == option) 
-                                Color(0xFFFACC15) 
-                            else 
-                                Color.White.copy(alpha = 0.15f),
-                            border = androidx.compose.foundation.BorderStroke(
-                                width = if (selectedLocationText == option) 2.dp else 1.dp,
+                    Text(
+                        text = "Take a selfie to share with $profileName",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp, vertical = 16.dp)
+                    )
+                    
+                    FloatingActionButton(
+                        onClick = { /* Capture handled in CameraPreview */ },
+                        modifier = Modifier.size(72.dp),
+                        containerColor = Color.White,
+                        shape = CircleShape
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = "Capture",
+                            tint = Color(0xFFFACC15),
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+            } else {
+                // Location Selection and Send/Retake Buttons
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.8f)
+                                )
+                            )
+                        )
+                        .padding(horizontal = 24.dp, vertical = 32.dp)
+                ) {
+                    // Location Selection Title
+                    Text(
+                        text = "Where are you?",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    
+                    // Location Options
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        locationOptions.forEach { option ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedLocationText = option
+                                    },
+                                shape = RoundedCornerShape(12.dp),
                                 color = if (selectedLocationText == option) 
                                     Color(0xFFFACC15) 
                                 else 
-                                    Color.White.copy(alpha = 0.3f)
-                            )
-                        ) {
-                            Text(
-                                text = option,
-                                color = if (selectedLocationText == option) 
-                                    Color.White 
-                                else 
-                                    Color.White.copy(alpha = 0.9f),
-                                fontSize = 15.sp,
-                                fontWeight = if (selectedLocationText == option) 
-                                    FontWeight.Bold 
-                                else 
-                                    FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
-                            )
+                                    Color.White.copy(alpha = 0.15f),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = if (selectedLocationText == option) 2.dp else 1.dp,
+                                    color = if (selectedLocationText == option) 
+                                        Color(0xFFFACC15) 
+                                    else 
+                                        Color.White.copy(alpha = 0.3f)
+                                )
+                            ) {
+                                Text(
+                                    text = option,
+                                    color = if (selectedLocationText == option) 
+                                        Color.White 
+                                    else 
+                                        Color.White.copy(alpha = 0.9f),
+                                    fontSize = 15.sp,
+                                    fontWeight = if (selectedLocationText == option) 
+                                        FontWeight.Bold 
+                                    else 
+                                        FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+                                )
+                            }
                         }
                     }
-                }
-                
-                // Send and Retake Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Retake Button
-                    OutlinedButton(
-                        onClick = { 
-                            selfieCaptured = false
-                            selectedLocationText = null
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(56.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(28.dp)
+                    
+                    // Send and Retake Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Retake",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                        // Retake Button
+                        OutlinedButton(
+                            onClick = { 
+                                capturedImage = null
+                                selectedLocationText = null
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(28.dp)
+                        ) {
+                            Text(
+                                text = "Retake",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
 
-                    Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
 
-                    // Send Button
-                    Button(
-                        onClick = {
-                            if (selectedLocationText != null) {
-                                showSuccessMessage = true
-                            }
-                        },
-                        enabled = selectedLocationText != null,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(56.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFACC15),
-                            contentColor = Color.White,
-                            disabledContainerColor = Color.Gray,
-                            disabledContentColor = Color.White.copy(alpha = 0.5f)
-                        ),
-                        shape = RoundedCornerShape(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = "Send",
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Send",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        // Send Button
+                        Button(
+                            onClick = {
+                                if (selectedLocationText != null) {
+                                    showSuccessMessage = true
+                                }
+                            },
+                            enabled = selectedLocationText != null,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFFACC15),
+                                contentColor = Color.White,
+                                disabledContainerColor = Color.Gray,
+                                disabledContentColor = Color.White.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = "Send",
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Send",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -398,3 +441,77 @@ fun SelfieCaptureScreen(
     }
 }
 
+@Composable
+fun CameraPreview(
+    context: Context,
+    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+    onImageCaptured: (Bitmap) -> Unit
+) {
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    val imageCapture = remember { ImageCapture.Builder().build() }
+    
+    AndroidView(
+        factory = { ctx ->
+            val previewView = PreviewView(ctx)
+            val executor = ContextCompat.getMainExecutor(ctx)
+            
+            cameraProviderFuture.addListener({
+                val cameraProvider = cameraProviderFuture.get()
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+                
+                val cameraSelector = CameraSelector.Builder()
+                    .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
+                    .build()
+                
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        cameraSelector,
+                        preview,
+                        imageCapture
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }, executor)
+            
+            previewView.setOnClickListener {
+                imageCapture.takePicture(
+                    executor,
+                    object : ImageCapture.OnImageCapturedCallback() {
+                        override fun onCaptureSuccess(image: ImageProxy) {
+                            val bitmap = imageProxyToBitmap(image)
+                            onImageCaptured(bitmap)
+                            image.close()
+                        }
+                        
+                        override fun onError(exception: ImageCaptureException) {
+                            exception.printStackTrace()
+                        }
+                    }
+                )
+            }
+            
+            previewView
+        },
+        modifier = Modifier.fillMaxSize()
+    )
+}
+
+private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
+    val buffer: ByteBuffer = image.planes[0].buffer
+    val bytes = ByteArray(buffer.remaining())
+    buffer.get(bytes)
+    
+    val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    
+    // Mirror the image for front camera
+    val matrix = Matrix().apply {
+        postScale(-1f, 1f, bitmap.width / 2f, bitmap.height / 2f)
+    }
+    
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+}
