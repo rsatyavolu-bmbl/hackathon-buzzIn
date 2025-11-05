@@ -95,6 +95,8 @@ fun LocationDetailScreen(
     val bioRestaurant = "Foodie who loves trying new restaurants 🍽️"
     
     var selectedProfile by remember { mutableStateOf<LocationProfile?>(null) }
+    var showSelfieCapture by remember { mutableStateOf(false) }
+    var selfieCaptureProfileName by remember { mutableStateOf("") }
     
     // Generate mock profiles with multiple photos
     val profiles = List(buzzInCount) { i ->
@@ -119,6 +121,27 @@ fun LocationDetailScreen(
     val pagerState = rememberPagerState(pageCount = { profiles.size })
     val coroutineScope = rememberCoroutineScope()
     
+    // Show selfie capture screen if triggered
+    if (showSelfieCapture) {
+        SelfieCaptureScreen(
+            profileName = selfieCaptureProfileName,
+            locationType = locationType.name, // Pass "COFFEE" or "RESTAURANT"
+            onBack = {
+                showSelfieCapture = false
+            },
+            onSelfieCaptured = {
+                showSelfieCapture = false
+                // Move to next profile
+                coroutineScope.launch {
+                    if (pagerState.currentPage < profiles.size - 1) {
+                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    }
+                }
+            }
+        )
+        return
+    }
+    
     // Show full-screen profile view if selected
     selectedProfile?.let { profile ->
         FullScreenProfileView(
@@ -129,11 +152,8 @@ fun LocationDetailScreen(
             },
             onAccept = {
                 selectedProfile = null
-                coroutineScope.launch {
-                    if (pagerState.currentPage < profiles.size - 1) {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                    }
-                }
+                selfieCaptureProfileName = profile.name
+                showSelfieCapture = true
             },
             onReject = {
                 selectedProfile = null
@@ -158,39 +178,63 @@ fun LocationDetailScreen(
             shadowElevation = 1.dp,
             color = Color.White
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
+                // Location Name
                 Text(
                     text = locationName,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
                 
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = Color(0xFFFEF3C7),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                // Buzz Ins Count and Buzz Out Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // Buzz Ins Pill
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = Color(0xFFFEF3C7),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = buzzInCount.toString(),
+                                color = Color(0xFFCA8A04),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Buzz Ins",
+                                color = Color(0xFFCA8A04),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                    
+                    // Buzz Out Button
+                    Button(
+                        onClick = onBack,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFACC15),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.height(36.dp)
                     ) {
                         Text(
-                            text = buzzInCount.toString(),
-                            color = Color(0xFFCA8A04),
-                            fontSize = 14.sp,
+                            text = "Buzz Out",
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "Buzz Ins",
-                            color = Color(0xFFCA8A04),
-                            fontSize = 12.sp
                         )
                     }
                 }
@@ -204,69 +248,12 @@ fun LocationDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            // Buzzed In Status Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 12.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFACC15))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "You're buzzed in!",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Others can see your profile here",
-                                color = Color.White.copy(alpha = 0.9f),
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = onBack,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color(0xFFCA8A04)
-                        ),
-                        modifier = Modifier.height(36.dp)
-                    ) {
-                        Text(
-                            text = "Buzz Out",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
             // Description
             Text(
                 text = "About this location",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
             )
             Text(
                 text = description,
@@ -306,11 +293,8 @@ fun LocationDetailScreen(
                             selectedProfile = profile
                         },
                         onAccept = {
-                            coroutineScope.launch {
-                                if (page < profiles.size - 1) {
-                                    pagerState.animateScrollToPage(page + 1)
-                                }
-                            }
+                            selfieCaptureProfileName = profile.name
+                            showSelfieCapture = true
                         },
                         onReject = {
                             coroutineScope.launch {
