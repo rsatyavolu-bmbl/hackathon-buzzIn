@@ -287,7 +287,9 @@ fun MapScreen(
                                     PlaceType.CONCERT -> LocationType.RESTAURANT
                                 }
                                 onBuzzIn(place.id, place.name, locationType, place.activeUsers)
-                                showLocationDetail = true
+                                // Clear local map state - we're now buzzed in, managed by MainActivity
+                                showLocationDetail = false
+                                selectedPlace = null
                             },
                             modifier = Modifier.weight(1f)
                         ) {
