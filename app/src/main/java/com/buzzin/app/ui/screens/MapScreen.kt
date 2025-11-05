@@ -137,10 +137,81 @@ suspend fun fetchNearbyLocations(latitude: Double, longitude: Double, radiusKm: 
     }
 }
 
-// Function to create a check-in
-suspend fun createCheckIn(userId: String, locationId: String, latitude: Double, longitude: Double): Boolean {
+// Function to create a check-in with duplicate prevention
+suspend fun createCheckIn(userId: String, locationId: String, latitude: Double, longitude: Double): Pair<Boolean, String?> {
     return withContext(Dispatchers.IO) {
         try {
+            // First, check if user already has an active check-in at this location
+            val checkQuery = """
+                query ListCheckIns {
+                  listCheckIns(filter: {
+                    userId: {eq: "$userId"},
+                    locationId: {eq: "$locationId"},
+                    isActive: {eq: true}
+                  }) {
+                    items {
+                      id
+                      userId
+                      locationId
+                    }
+                  }
+                }
+            """.trimIndent()
+
+            Log.d("MapScreen", "Checking for existing check-in: userId=$userId, locationId=$locationId")
+
+            var existingCheckIns: String? = null
+            var checkError: Exception? = null
+
+            val checkRequest = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
+                checkQuery,
+                emptyMap<String, Any>(),
+                String::class.java,
+                com.amplifyframework.api.graphql.GraphQLRequest.VariablesSerializer { "{}" }
+            )
+
+            Amplify.API.query(
+                checkRequest,
+                { response ->
+                    existingCheckIns = response.data as String
+                    Log.d("MapScreen", "Existing check-ins response: $existingCheckIns")
+                },
+                { err ->
+                    Log.e("MapScreen", "Check-in query failed", err)
+                    checkError = Exception(err.toString())
+                }
+            )
+
+            // Wait for check query result
+            var timeout = 0
+            while (existingCheckIns == null && checkError == null && timeout < 50) {
+                Thread.sleep(100)
+                timeout++
+            }
+
+            if (checkError != null) {
+                throw checkError!!
+            }
+
+            // Parse the response to check if any items exist
+            existingCheckIns?.let { response ->
+                try {
+                    val responseJson = JSONObject(response)
+                    val listCheckIns = responseJson.getJSONObject("listCheckIns")
+                    val items = listCheckIns.getJSONArray("items")
+
+                    if (items.length() > 0) {
+                        Log.d("MapScreen", "User already has an active check-in at this location")
+                        return@withContext Pair(false, "You're already checked in here!")
+                    } else {
+                        Log.d("MapScreen", "No existing check-in found, proceeding with creation")
+                    }
+                } catch (e: Exception) {
+                    Log.e("MapScreen", "Error parsing check-in query response", e)
+                }
+            }
+
+            // No existing check-in found, proceed with creation
             val timestamp = java.time.Instant.now().toString()
             val mutation = """
                 mutation CreateCheckIn {
@@ -160,7 +231,7 @@ suspend fun createCheckIn(userId: String, locationId: String, latitude: Double, 
                 }
             """.trimIndent()
 
-            Log.d("MapScreen", "Creating check-in: userId=$userId, locationId=$locationId")
+            Log.d("MapScreen", "Creating new check-in: userId=$userId, locationId=$locationId")
 
             var success = false
             var error: Exception? = null
@@ -185,17 +256,19 @@ suspend fun createCheckIn(userId: String, locationId: String, latitude: Double, 
             )
 
             // Wait for async result
-            var timeout = 0
+            timeout = 0
             while (!success && error == null && timeout < 50) {
                 Thread.sleep(100)
                 timeout++
             }
 
-            if (error != null) throw error!!
-            success
+            if (error != null) {
+                throw error!!
+            }
+            Pair(success, null)
         } catch (e: Exception) {
             Log.e("MapScreen", "Failed to create check-in", e)
-            false
+            Pair(false, "Failed to check in: ${e.message}")
         }
     }
 }
@@ -228,8 +301,9 @@ fun MapScreen(
     var checkInMessage by remember { mutableStateOf<String?>(null) }
     var isCheckingIn by remember { mutableStateOf(false) }
 
-    // Use a test user ID (in production, this would come from authentication)
-    val currentUserId = "test-user-${System.currentTimeMillis() / 1000000}"
+    // Use a consistent test user ID (in production, this would come from authentication)
+    // Using a fixed ID so duplicate check-in prevention works across app restarts
+    val currentUserId = "test-user-fixed-id-12345"
 
     // Function to reload locations
     suspend fun reloadLocations() {
@@ -564,7 +638,7 @@ fun MapScreen(
                                         isCheckingIn = true
                                         checkInMessage = null
 
-                                        val success = createCheckIn(
+                                        val (success, errorMsg) = createCheckIn(
                                             userId = currentUserId,
                                             locationId = place.id,
                                             latitude = place.location.latitude,
@@ -591,7 +665,8 @@ fun MapScreen(
                                             // Reload locations to update active user counts
                                             reloadLocations()
                                         } else {
-                                            checkInMessage = "Failed to buzz in. Please try again."
+                                            // Show specific error message or generic one
+                                            checkInMessage = errorMsg ?: "Failed to buzz in. Please try again."
                                         }
                                     }
                                 }

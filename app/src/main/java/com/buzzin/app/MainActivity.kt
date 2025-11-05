@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.buzzin.app.ui.screens.HomeScreen
 import com.buzzin.app.ui.screens.MapScreen
+import com.buzzin.app.ui.screens.MatchesScreen
 import com.buzzin.app.ui.screens.ProfileScreen
 import com.buzzin.app.ui.screens.SettingsScreen
 import com.buzzin.app.ui.theme.BuzzInTheme
@@ -32,6 +33,7 @@ class MainActivity : ComponentActivity() {
 data class BuzzInState(
     val isBuzzedIn: Boolean = false,
     val locationId: Int? = null,
+    val realLocationId: String? = null, // Real UUID from database
     val locationName: String? = null,
     val locationType: com.buzzin.app.ui.screens.LocationType? = null,
     val buzzInCount: Int = 0
@@ -109,7 +111,7 @@ fun MainScreen() {
                         buzzInState = BuzzInState()
                     }
                 )
-                3 -> SettingsScreen()
+                3 -> MatchesScreen()
                 4 -> SettingsScreen()
             }
         }

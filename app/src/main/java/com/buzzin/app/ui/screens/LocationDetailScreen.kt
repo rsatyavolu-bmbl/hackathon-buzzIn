@@ -1,5 +1,6 @@
 package com.buzzin.app.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,7 +35,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.amplifyframework.api.graphql.GraphQLRequest
+import com.amplifyframework.core.Amplify
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 data class LocationDetail(
     val id: Int,
@@ -49,6 +56,7 @@ enum class LocationType {
 
 data class LocationProfile(
     val id: Int,
+    val userId: String, // Real user ID from database
     val name: String,
     val age: Int,
     val bio: String,
@@ -68,6 +76,83 @@ val profileImages = listOf(
 
 val names = listOf("Alex", "Jordan", "Casey", "Morgan", "Riley", "Taylor", "Jamie", "Avery", "Quinn", "Drew", "Blake", "Sage")
 
+// Function to perform swipe and check for match
+suspend fun performSwipe(
+    userId: String,
+    targetUserId: String,
+    locationId: String,
+    action: String // "LIKE" or "PASS"
+): Pair<Boolean, Boolean> { // Returns (success, isMatch)
+    return withContext(Dispatchers.IO) {
+        try {
+            val mutation = """
+                mutation PerformSwipe {
+                  performSwipe(
+                    userId: "$userId",
+                    targetUserId: "$targetUserId",
+                    locationId: "$locationId",
+                    action: "$action"
+                  )
+                }
+            """.trimIndent()
+
+            Log.d("LocationDetailScreen", "Performing swipe: userId=$userId, targetUserId=$targetUserId, action=$action")
+
+            var responseData: String? = null
+            var error: Exception? = null
+
+            val request = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
+                mutation,
+                emptyMap<String, Any>(),
+                String::class.java,
+                GraphQLRequest.VariablesSerializer { "{}" }
+            )
+
+            Amplify.API.mutate(
+                request,
+                { response ->
+                    responseData = response.data as String
+                    Log.d("LocationDetailScreen", "Swipe response: $responseData")
+                },
+                { err ->
+                    Log.e("LocationDetailScreen", "Swipe failed", err)
+                    error = Exception(err.toString())
+                }
+            )
+
+            // Wait for async result
+            var timeout = 0
+            while (responseData == null && error == null && timeout < 50) {
+                Thread.sleep(100)
+                timeout++
+            }
+
+            if (error != null) {
+                throw error!!
+            }
+
+            // Parse response to check for match
+            responseData?.let { response ->
+                try {
+                    val responseJson = JSONObject(response)
+                    val performSwipeResult = responseJson.getString("performSwipe")
+                    val resultJson = JSONObject(performSwipeResult)
+                    val isMatch = resultJson.optBoolean("isMatch", false)
+                    Log.d("LocationDetailScreen", "Swipe recorded. Match: $isMatch")
+                    return@withContext Pair(true, isMatch)
+                } catch (e: Exception) {
+                    Log.e("LocationDetailScreen", "Error parsing swipe response", e)
+                }
+            }
+
+            Pair(true, false)
+        } catch (e: Exception) {
+            Log.e("LocationDetailScreen", "Failed to perform swipe", e)
+            Pair(false, false)
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LocationDetailScreen(
@@ -75,7 +160,9 @@ fun LocationDetailScreen(
     locationName: String,
     locationType: LocationType,
     buzzInCount: Int,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    realLocationId: String = "", // Real location UUID from API
+    currentUserId: String = "test-user-fixed-id-12345" // Current user's ID
 ) {
     val icon: ImageVector = if (locationType == LocationType.COFFEE) {
         Icons.Default.Coffee
@@ -95,14 +182,18 @@ fun LocationDetailScreen(
     val bioRestaurant = "Foodie who loves trying new restaurants 🍽️"
     
     var selectedProfile by remember { mutableStateOf<LocationProfile?>(null) }
-    
+    var swipedProfileIds by remember { mutableStateOf(setOf<Int>()) }
+    var matchNotification by remember { mutableStateOf<String?>(null) }
+
     // Generate mock profiles with multiple photos
-    val profiles = List(buzzInCount) { i ->
+    // TODO: Replace with real user data from API
+    val allProfiles = List(buzzInCount) { i ->
         val mainPhoto = profileImages[i % profileImages.size]
         val otherPhotos = profileImages.filterIndexed { idx, _ -> idx != (i % profileImages.size) }
-        
+
         LocationProfile(
             id = i + 1,
+            userId = "mock-user-${i + 1}", // Mock userId for now
             name = names[i % names.size],
             age = 24 + (i % 10),
             bio = if (locationType == LocationType.COFFEE) bioCoffee else bioRestaurant,
@@ -116,6 +207,9 @@ fun LocationDetailScreen(
         )
     }
 
+    // Filter out swiped profiles
+    val profiles = allProfiles.filter { it.id !in swipedProfileIds }
+
     val pagerState = rememberPagerState(pageCount = { profiles.size })
     val coroutineScope = rememberCoroutineScope()
     
@@ -124,23 +218,38 @@ fun LocationDetailScreen(
         FullScreenProfileView(
             profile = profile,
             locationName = locationName,
-            onBack = { 
+            onBack = {
                 selectedProfile = null
             },
             onAccept = {
-                selectedProfile = null
                 coroutineScope.launch {
-                    if (pagerState.currentPage < profiles.size - 1) {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    val (success, isMatch) = performSwipe(
+                        userId = currentUserId,
+                        targetUserId = profile.userId,
+                        locationId = realLocationId.ifEmpty { "mock-location-id" },
+                        action = "LIKE"
+                    )
+                    if (success) {
+                        swipedProfileIds = swipedProfileIds + profile.id
+                        if (isMatch) {
+                            matchNotification = "It's a match with ${profile.name}! 🎉"
+                        }
                     }
+                    selectedProfile = null
                 }
             },
             onReject = {
-                selectedProfile = null
                 coroutineScope.launch {
-                    if (pagerState.currentPage < profiles.size - 1) {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    val (success, _) = performSwipe(
+                        userId = currentUserId,
+                        targetUserId = profile.userId,
+                        locationId = realLocationId.ifEmpty { "mock-location-id" },
+                        action = "PASS"
+                    )
+                    if (success) {
+                        swipedProfileIds = swipedProfileIds + profile.id
                     }
+                    selectedProfile = null
                 }
             }
         )
@@ -284,15 +393,37 @@ fun LocationDetailScreen(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
-            // Horizontal Pager for Profile Cards
+            // Horizontal Pager for Profile Cards or Empty State
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(500.dp)
                     .padding(bottom = 8.dp),
-                contentAlignment = Alignment.TopCenter
+                contentAlignment = Alignment.Center
             ) {
-                HorizontalPager(
+                if (profiles.isEmpty()) {
+                    // Show empty state when all profiles have been swiped
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Text(
+                            text = "That's everyone!",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF334155)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "You've seen all profiles at this location",
+                            fontSize = 14.sp,
+                            color = Color(0xFF64748B),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                } else {
+                    HorizontalPager(
                     state = pagerState,
                     modifier = Modifier
                         .fillMaxWidth(0.88f)
@@ -307,43 +438,93 @@ fun LocationDetailScreen(
                         },
                         onAccept = {
                             coroutineScope.launch {
-                                if (page < profiles.size - 1) {
-                                    pagerState.animateScrollToPage(page + 1)
+                                val (success, isMatch) = performSwipe(
+                                    userId = currentUserId,
+                                    targetUserId = profile.userId,
+                                    locationId = realLocationId.ifEmpty { "mock-location-id" },
+                                    action = "LIKE"
+                                )
+                                if (success) {
+                                    swipedProfileIds = swipedProfileIds + profile.id
+                                    if (isMatch) {
+                                        matchNotification = "It's a match with ${profile.name}! 🎉"
+                                    }
                                 }
                             }
                         },
                         onReject = {
                             coroutineScope.launch {
-                                if (page < profiles.size - 1) {
-                                    pagerState.animateScrollToPage(page + 1)
+                                val (success, _) = performSwipe(
+                                    userId = currentUserId,
+                                    targetUserId = profile.userId,
+                                    locationId = realLocationId.ifEmpty { "mock-location-id" },
+                                    action = "PASS"
+                                )
+                                if (success) {
+                                    swipedProfileIds = swipedProfileIds + profile.id
                                 }
                             }
                         }
                     )
                 }
+                }
             }
 
-            // Page Indicator
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                repeat(profiles.size) { index ->
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .padding(horizontal = 3.dp)
-                            .background(
-                                color = if (index == pagerState.currentPage) Color(0xFF94A3B8) else Color(0xFFCBD5E1),
-                                shape = CircleShape
-                            )
-                    )
+            // Page Indicator (only show if there are profiles)
+            if (profiles.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    repeat(profiles.size) { index ->
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .padding(horizontal = 3.dp)
+                                .background(
+                                    color = if (index == pagerState.currentPage) Color(0xFF94A3B8) else Color(0xFFCBD5E1),
+                                    shape = CircleShape
+                                )
+                        )
+                    }
                 }
             }
         }
+    }
+
+    // Match notification dialog
+    matchNotification?.let { message ->
+        AlertDialog(
+            onDismissRequest = { matchNotification = null },
+            title = {
+                Text(
+                    text = "It's a Match!",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFACC15)
+                )
+            },
+            text = {
+                Text(
+                    text = message,
+                    fontSize = 16.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { matchNotification = null },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFACC15)
+                    )
+                ) {
+                    Text("Awesome!")
+                }
+            },
+            containerColor = Color.White
+        )
     }
 }
 
