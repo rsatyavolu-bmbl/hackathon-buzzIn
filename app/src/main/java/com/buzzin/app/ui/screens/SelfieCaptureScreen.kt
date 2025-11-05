@@ -508,8 +508,14 @@ private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
     
     val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     
-    // Mirror the image for front camera
+    // Get the rotation from the image
+    val rotationDegrees = image.imageInfo.rotationDegrees
+    
+    // Create matrix for rotation and mirroring (for front camera)
     val matrix = Matrix().apply {
+        // First rotate the image to correct orientation
+        postRotate(rotationDegrees.toFloat())
+        // Then mirror horizontally for front camera (natural selfie view)
         postScale(-1f, 1f, bitmap.width / 2f, bitmap.height / 2f)
     }
     
