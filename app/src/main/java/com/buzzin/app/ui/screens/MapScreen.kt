@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Coffee
@@ -23,6 +25,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.amplifyframework.core.Amplify
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
@@ -43,6 +48,18 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
+// Calculate distance between two LatLng points in meters (Haversine formula)
+fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val earthRadius = 6371000.0 // meters
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return earthRadius * c
+}
+
 // Sample data for social places
 data class SocialPlace(
     val id: String,
@@ -50,7 +67,8 @@ data class SocialPlace(
     val type: PlaceType,
     val location: LatLng,
     val activeUsers: Int = 0,
-    val address: String = ""
+    val address: String = "",
+    val description: String = ""
 )
 
 enum class PlaceType {
@@ -138,7 +156,7 @@ suspend fun saveLocationToBackend(
 suspend fun searchAndSavePlacesFromGoogle(
     placesClient: PlacesClient,
     center: LatLng,
-    radiusMeters: Double = 5000.0
+    radiusMeters: Double = 400.0
 ): List<SocialPlace> {
     return withContext(Dispatchers.IO) {
         try {
@@ -149,22 +167,22 @@ suspend fun searchAndSavePlacesFromGoogle(
                 Place.Field.NAME,
                 Place.Field.LAT_LNG,
                 Place.Field.ADDRESS,
-                Place.Field.TYPES
+                Place.Field.TYPES,
+                Place.Field.EDITORIAL_SUMMARY
             )
 
             // Search for restaurants, cafes, and bars
             val includedTypes = listOf(
                 "restaurant",
                 "cafe",
-                "bar",
-                "night_club"
+                "bar"
             )
 
             val circle = CircularBounds.newInstance(center, radiusMeters)
 
             val searchRequest = SearchNearbyRequest.builder(circle, placeFields)
                 .setIncludedTypes(includedTypes)
-                .setMaxResultCount(20)
+                .setMaxResultCount(10)
                 .build()
 
             val searchTask = placesClient.searchNearby(searchRequest)
@@ -181,6 +199,7 @@ suspend fun searchAndSavePlacesFromGoogle(
                     val placeName = place.name ?: "Unknown Place"
                     val placeAddress = place.address ?: ""
                     val placeId = place.id ?: UUID.randomUUID().toString()
+                    val placeDescription = place.editorialSummary ?: ""
 
                     // Determine place type from Google types
                     val placeType = when {
@@ -216,7 +235,8 @@ suspend fun searchAndSavePlacesFromGoogle(
                             type = placeType,
                             location = LatLng(placeLatLng.latitude, placeLatLng.longitude),
                             activeUsers = 0, // Will be updated later
-                            address = placeAddress
+                            address = placeAddress,
+                            description = placeDescription
                         )
                     )
                 } catch (e: Exception) {
@@ -575,7 +595,7 @@ fun MapScreen(
 
                         // Fetch nearby locations from Google Places and save to backend
                         Log.d("MapScreen", "Searching Google Places and saving to backend")
-                        nearbyPlaces = searchAndSavePlacesFromGoogle(placesClient, newLocation, radiusMeters = 5000.0)
+                        nearbyPlaces = searchAndSavePlacesFromGoogle(placesClient, newLocation)
                         Log.d("MapScreen", "Found and saved ${nearbyPlaces.size} nearby locations")
                     }
                 } catch (e: Exception) {
@@ -599,8 +619,82 @@ fun MapScreen(
     // State for locations from API
     var socialPlaces by remember { mutableStateOf<List<SocialPlace>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var isFetchingPlaces by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var checkInMessage by remember { mutableStateOf<String?>(null) }
+
+    // Monitor location changes and fetch new places when user moves
+    var lastFetchLocation by remember { mutableStateOf<LatLng?>(null) }
+
+    DisposableEffect(locationPermissionGranted) {
+        if (!locationPermissionGranted) {
+            return@DisposableEffect onDispose { }
+        }
+
+        val locationRequest = LocationRequest.Builder(
+            Priority.PRIORITY_HIGH_ACCURACY,
+            30000L // Update every 30 seconds
+        ).apply {
+            setMinUpdateIntervalMillis(15000L) // Minimum 15 seconds between updates
+            setMaxUpdateDelayMillis(60000L)
+        }.build()
+
+        val locationCallback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                result.lastLocation?.let { location ->
+                    val newLocation = LatLng(location.latitude, location.longitude)
+                    userLocation = newLocation
+
+                    // Check if we've moved significantly (500m) from last fetch location
+                    val shouldFetchNewPlaces = lastFetchLocation?.let { lastLoc ->
+                        val distance = calculateDistance(
+                            lastLoc.latitude, lastLoc.longitude,
+                            newLocation.latitude, newLocation.longitude
+                        )
+                        distance > 500 // Fetch new places if moved more than 500 meters
+                    } ?: true // First time, always fetch
+
+                    if (shouldFetchNewPlaces) {
+                        Log.d("MapScreen", "User moved significantly, fetching new places at ${newLocation.latitude}, ${newLocation.longitude}")
+                        isFetchingPlaces = true
+                        coroutineScope.launch {
+                            try {
+                                val fetchedPlaces = searchAndSavePlacesFromGoogle(
+                                    placesClient,
+                                    newLocation
+                                )
+                                nearbyPlaces = fetchedPlaces
+                                socialPlaces = fetchedPlaces
+                                lastFetchLocation = newLocation
+                                Log.d("MapScreen", "Fetched ${fetchedPlaces.size} new places")
+                            } catch (e: Exception) {
+                                Log.e("MapScreen", "Error fetching places on location change", e)
+                            } finally {
+                                isFetchingPlaces = false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        try {
+            // Permission is checked by locationPermissionGranted guard at top of DisposableEffect
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                locationCallback,
+                android.os.Looper.getMainLooper()
+            )
+        } catch (e: SecurityException) {
+            Log.e("MapScreen", "Location permission not granted", e)
+        }
+
+        onDispose {
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+            Log.d("MapScreen", "Location updates stopped")
+        }
+    }
+
     var isCheckingIn by remember { mutableStateOf(false) }
 
     // Load user ID from config file (each developer can have their own)
@@ -753,8 +847,7 @@ fun MapScreen(
             val targetLocation = userLocation ?: center41stAndLamar
             val fetchedLocations = searchAndSavePlacesFromGoogle(
                 placesClient,
-                targetLocation,
-                radiusMeters = 5000.0
+                targetLocation
             )
             nearbyPlaces = fetchedLocations
             socialPlaces = fetchedLocations
@@ -775,8 +868,7 @@ fun MapScreen(
             Log.d("MapScreen", "Initial load: Searching Google Places")
             val fetchedLocations = searchAndSavePlacesFromGoogle(
                 placesClient,
-                center41stAndLamar,
-                radiusMeters = 5000.0
+                center41stAndLamar
             )
             nearbyPlaces = fetchedLocations
             socialPlaces = fetchedLocations
@@ -895,38 +987,54 @@ fun MapScreen(
             }
         }
 
-        // Loading indicator
-        if (isLoading) {
+        // Unified status indicator for loading, errors, and empty states
+        if (isLoading || isFetchingPlaces || errorMessage != null || (!isLoading && socialPlaces.isEmpty())) {
             Card(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 100.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                    .padding(top = 16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = when {
+                        errorMessage != null -> MaterialTheme.colorScheme.errorContainer
+                        else -> Color.White.copy(alpha = 0.95f)
+                    }
+                )
             ) {
                 Row(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    Text("Loading locations...")
+                    when {
+                        isLoading || isFetchingPlaces -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Finding nearby places...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Black
+                            )
+                        }
+                        errorMessage != null -> {
+                            Text(
+                                text = errorMessage!!,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                        socialPlaces.isEmpty() -> {
+                            Text(
+                                text = "No locations found nearby. Try moving to a different area.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Black
+                            )
+                        }
+                    }
                 }
-            }
-        }
-
-        // Error message
-        errorMessage?.let { error ->
-            Card(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 100.dp, start = 16.dp, end = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-            ) {
-                Text(
-                    text = error,
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
             }
         }
 
