@@ -226,6 +226,9 @@ fun LocationDetailScreen(
     var swipedProfileIds by remember { mutableStateOf(setOf<Int>()) }
     var matchNotification by remember { mutableStateOf<String?>(null) }
 
+    // Track connection status for each profile by their ID
+    var profileConnectionStatuses by remember { mutableStateOf(mapOf<Int, ConnectionStatus>()) }
+
     // Dynamic buzz in count that updates from API
     var currentBuzzInCount by remember { mutableStateOf(buzzInCount) }
 
@@ -357,6 +360,10 @@ fun LocationDetailScreen(
                 // Get the page index - either from full-screen view or from pager
                 val pageIndex = selectedProfileIndex ?: pagerState.currentPage
 
+                // Mark this profile as CONNECTED
+                val currentProfile = profiles[pageIndex]
+                profileConnectionStatuses = profileConnectionStatuses + (currentProfile.id to ConnectionStatus.CONNECTED)
+
                 // Move to next profile
                 if (pageIndex < profiles.size - 1) {
                     // If we're in full-screen mode, update selectedProfileIndex
@@ -380,17 +387,27 @@ fun LocationDetailScreen(
 
     // Show full-screen profile view if selected
     selectedProfileIndex?.let { index ->
+        val profile = profiles[index]
+
+        // Determine connection status for full-screen view
+        val fullScreenConnectionStatus = profileConnectionStatuses[profile.id] ?: when (profile.state) {
+            ProfileState.ACCEPTED -> ConnectionStatus.WAITING
+            ProfileState.REJECTED -> ConnectionStatus.PASSED
+            ProfileState.ACTIVE -> null
+        }
+
         FullScreenProfileView(
-            profile = profiles[index],
+            profile = profile,
             locationName = locationName,
+            connectionStatus = fullScreenConnectionStatus,
             onBack = {
                 selectedProfileIndex = null
             },
             onAccept = {
-                android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profiles[index].name}")
+                android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profile.name}")
                 // Update profile state to ACCEPTED (don't show selfie screen yet)
                 allProfiles = allProfiles.toMutableList().also { list ->
-                    val profileIndex = list.indexOfFirst { it.id == profiles[index].id }
+                    val profileIndex = list.indexOfFirst { it.id == profile.id }
                     if (profileIndex != -1) {
                         list[profileIndex] = list[profileIndex].copy(state = ProfileState.ACCEPTED)
                     }
@@ -398,7 +415,7 @@ fun LocationDetailScreen(
             },
             onWaitingClick = {
                 // Open selfie screen when clicking the waiting pill
-                selfieCaptureProfileName = profiles[index].name
+                selfieCaptureProfileName = profile.name
                 showSelfieCapture = true
             },
             onReject = {
@@ -595,8 +612,8 @@ fun LocationDetailScreen(
                         photos = profile.photos
                     )
 
-                    // Determine connection status based on profile state
-                    val connectionStatus: ConnectionStatus? = when (profile.state) {
+                    // Determine connection status based on profileConnectionStatuses map
+                    val connectionStatus: ConnectionStatus? = profileConnectionStatuses[profile.id] ?: when (profile.state) {
                         ProfileState.ACCEPTED -> ConnectionStatus.WAITING
                         ProfileState.REJECTED -> ConnectionStatus.PASSED
                         ProfileState.ACTIVE -> null
@@ -1146,6 +1163,7 @@ fun ProfileCardWithActions(
 fun FullScreenProfileView(
     profile: LocationProfile,
     locationName: String,
+    connectionStatus: ConnectionStatus? = null,
     onBack: () -> Unit,
     onAccept: () -> Unit,
     onReject: () -> Unit,
@@ -1289,64 +1307,129 @@ fun FullScreenProfileView(
                     
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Show state label when not active
-                    if (profile.state == ProfileState.ACCEPTED) {
-                        // Waiting Status Pill
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onWaitingClick() },
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFFEF3C7),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
+                    // Show status/buttons based on connection status
+                    when (connectionStatus) {
+                        ConnectionStatus.WAITING -> {
+                            // Waiting Status Pill (clickable to send selfie)
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onWaitingClick() },
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFFFEF3C7),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Schedule,
-                                    contentDescription = null,
-                                    tint = Color(0xFFD97706),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Waiting for response",
-                                    color = Color(0xFFB45309),
-                                    fontSize = 14.sp
-                                )
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Schedule,
+                                        contentDescription = null,
+                                        tint = Color(0xFFD97706),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Send Selfie",
+                                        color = Color(0xFFB45309),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
                         }
-                    } else if (profile.state == ProfileState.REJECTED) {
-                        // Passed Status Pill
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFFEE2E2),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
+                        ConnectionStatus.CONNECTED -> {
+                            // Connected Status (not clickable) + Follow Up Button
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Cancel,
-                                    contentDescription = null,
-                                    tint = Color(0xFFDC2626),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Passed",
-                                    color = Color(0xFFC71212),
-                                    fontSize = 14.sp
-                                )
+                                // Connected pill (not clickable)
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color(0xFFD1FAE5),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6EE7B7))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Favorite,
+                                            contentDescription = null,
+                                            tint = Color(0xFF059669),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Connected",
+                                            color = Color(0xFF047857),
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+
+                                // Follow Up Button (clickable)
+                                Button(
+                                    onClick = { /* TODO: Add follow up action */ },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFFACC15)
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Chat,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Follow Up",
+                                        color = Color.White,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
-                    } else {
+                        ConnectionStatus.PASSED -> {
+                            // Passed Status Pill
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFFFEE2E2),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Cancel,
+                                        contentDescription = null,
+                                        tint = Color(0xFFDC2626),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Passed",
+                                        color = Color(0xFFC71212),
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        }
+                        null -> {
                         // Action Buttons (only show when ACTIVE)
                         Box(
                             modifier = Modifier
@@ -1404,6 +1487,7 @@ fun FullScreenProfileView(
                                     )
                                 }
                             }
+                        }
                         }
                     }
                 }
