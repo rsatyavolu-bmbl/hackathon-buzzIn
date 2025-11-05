@@ -107,3 +107,4 @@ amplifytools.xcconfig
 amplify_outputs*
 amplifyconfiguration*
 amplify_outputs.json
+user_config.json

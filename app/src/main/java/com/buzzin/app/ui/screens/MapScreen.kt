@@ -418,9 +418,21 @@ fun MapScreen(
     var checkInMessage by remember { mutableStateOf<String?>(null) }
     var isCheckingIn by remember { mutableStateOf(false) }
 
-    // Use a consistent test user ID (in production, this would come from authentication)
-    // Using a fixed ID so duplicate check-in prevention works across app restarts
-    val currentUserId = "test-user-fixed-id-12345"
+    // Load user ID from config file (each developer can have their own)
+    // In production, this would come from authentication
+    val currentUserId = remember {
+        try {
+            val inputStream = context.resources.openRawResource(
+                context.resources.getIdentifier("user_config", "raw", context.packageName)
+            )
+            val jsonString = inputStream.bufferedReader().use { it.readText() }
+            val jsonObject = JSONObject(jsonString)
+            jsonObject.getString("userId")
+        } catch (e: Exception) {
+            Log.e("MapScreen", "Failed to load user config, using default", e)
+            "test-user-fixed-id-12345"
+        }
+    }
 
     // Function to check out (deactivate active check-in)
     suspend fun checkOut() {

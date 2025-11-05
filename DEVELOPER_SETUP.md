@@ -50,14 +50,38 @@ cp /path/to/amplify_outputs.json ./amplify_outputs.json
 cp /path/to/amplifyconfiguration.json ./app/src/main/res/raw/amplifyconfiguration.json
 ```
 
-### Step 3: Verify Setup
+### Step 3: Configure Your User Identity
+
+Each developer should have their own user ID to act as a different person in the app:
+
+```bash
+# Copy the sample config
+cp app/src/main/res/raw/user_config_sample.json app/src/main/res/raw/user_config.json
+
+# Edit with your own ID
+nano app/src/main/res/raw/user_config.json
+```
+
+**Example user_config.json:**
+```json
+{
+  "userId": "test-user-john-12345",
+  "userName": "John Developer"
+}
+```
+
+**Important**: Each developer should use a unique `userId` so you can test as different users!
+
+Suggested format: `test-user-YOURNAME-12345`
+
+### Step 4: Verify Setup
 
 The configuration should contain:
 - **GraphQL API URL**: `https://yutl6o6xvfhq3eeij2j3teg7aq.appsync-api.us-east-1.amazonaws.com/graphql`
 - **Region**: `us-east-1`
 - **API Key**: (starts with `da2-...`)
 
-### Step 4: Build and Run
+### Step 5: Build and Run
 
 ```bash
 # Build the Android app
