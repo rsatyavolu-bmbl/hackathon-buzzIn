@@ -209,7 +209,7 @@ fun LocationDetailScreen(
     buzzInCount: Int,
     onBack: () -> Unit,
     realLocationId: String = "", // Real location UUID from API
-    currentUserId: String = "test-user-fixed-id-12345" // Current user's ID
+    currentUserId: String = "26d085ae-5f8b-4de4-bea7-cb1459f5c0b4" // Current user's ID (Jessica Williams)
 ) {
     val description = if (locationType == LocationType.COFFEE) {
         "A cozy coffee shop perfect for casual meetups and first dates. Enjoy artisan coffee and a relaxed atmosphere."
@@ -217,13 +217,9 @@ fun LocationDetailScreen(
         "A wonderful dining experience awaits. Great ambiance for dates and getting to know someone over delicious food."
     }
 
-    val bioCoffee = "Coffee enthusiast looking to meet new people ☕"
-    val bioRestaurant = "Foodie who loves trying new restaurants 🍽️"
-
     var selectedProfileIndex by remember { mutableStateOf<Int?>(null) }
     var showSelfieCapture by remember { mutableStateOf(false) }
     var selfieCaptureProfileName by remember { mutableStateOf("") }
-    var swipedProfileIds by remember { mutableStateOf(setOf<Int>()) }
     var matchNotification by remember { mutableStateOf<String?>(null) }
 
     // Track connection status for each profile by their ID
@@ -232,11 +228,11 @@ fun LocationDetailScreen(
     // Dynamic buzz in count that updates from API
     var currentBuzzInCount by remember { mutableStateOf(buzzInCount) }
 
-    // Function to fetch active users at location using direct GraphQL query
-    suspend fun fetchActiveUsersCount(): Int {
+    // Function to fetch active users at location with their full profile data
+    suspend fun fetchActiveUsersWithProfiles(): List<LocationProfile> {
         return withContext(Dispatchers.IO) {
             try {
-                Log.d("LocationDetailScreen", "Fetching active check-ins for location: $realLocationId")
+                Log.d("LocationDetailScreen", "Fetching active users for location: $realLocationId")
 
                 // Query active check-ins directly
                 val queryDoc = """
@@ -253,7 +249,7 @@ fun LocationDetailScreen(
                     }
                 """.trimIndent()
 
-                var result: Int? = null
+                var userIds: List<String>? = null
 
                 val request = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
                     queryDoc,
@@ -271,74 +267,149 @@ fun LocationDetailScreen(
                             val jsonResponse = JSONObject(responseStr)
                             val listCheckIns = jsonResponse.getJSONObject("listCheckIns")
                             val items = listCheckIns.getJSONArray("items")
-                            result = items.length()
-                            Log.d("LocationDetailScreen", "Active check-ins count: $result")
+                            val ids = mutableListOf<String>()
+                            for (i in 0 until items.length()) {
+                                val item = items.getJSONObject(i)
+                                val userId = item.getString("userId")
+                                // Exclude current user from the list
+                                if (userId != currentUserId) {
+                                    ids.add(userId)
+                                }
+                            }
+                            userIds = ids
+                            Log.d("LocationDetailScreen", "Found ${ids.size} active users (excluding self)")
                         } catch (e: Exception) {
                             Log.e("LocationDetailScreen", "Error parsing check-ins", e)
-                            result = 0
+                            userIds = emptyList()
                         }
                     },
                     { err ->
                         Log.e("LocationDetailScreen", "Check-ins query failed", err)
-                        result = 0
+                        userIds = emptyList()
                     }
                 )
 
                 // Wait for async result
                 var timeout = 0
-                while (result == null && timeout < 50) {
+                while (userIds == null && timeout < 50) {
                     Thread.sleep(100)
                     timeout++
                 }
 
-                result ?: 0 // Return 0 if query fails
+                val fetchedUserIds = userIds ?: emptyList()
+
+                // Now fetch each user's profile
+                val profiles = mutableListOf<LocationProfile>()
+                fetchedUserIds.forEachIndexed { index, userId ->
+                    try {
+                        val userQuery = """
+                            query GetUser {
+                              getUser(id: "$userId") {
+                                id
+                                name
+                                age
+                                bio
+                                photoRes
+                                interests
+                              }
+                            }
+                        """.trimIndent()
+
+                        var userData: JSONObject? = null
+
+                        val userRequest = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
+                            userQuery,
+                            emptyMap<String, Any>(),
+                            String::class.java,
+                            com.amplifyframework.api.graphql.GraphQLRequest.VariablesSerializer { "{}" }
+                        )
+
+                        Amplify.API.query(
+                            userRequest,
+                            { response ->
+                                try {
+                                    val responseStr = response.data as String
+                                    Log.d("LocationDetailScreen", "User query response for $userId: $responseStr")
+                                    val jsonResponse = JSONObject(responseStr)
+                                    // Response format is {"getUser":{...}} not {"data":{"getUser":{...}}}
+                                    userData = jsonResponse.getJSONObject("getUser")
+                                    Log.d("LocationDetailScreen", "Successfully parsed user data for $userId")
+                                } catch (e: Exception) {
+                                    Log.e("LocationDetailScreen", "Error parsing user $userId", e)
+                                    Log.e("LocationDetailScreen", "Response was: ${response.data}")
+                                }
+                            },
+                            { err ->
+                                Log.e("LocationDetailScreen", "User query failed for $userId", err)
+                            }
+                        )
+
+                        // Wait for user data
+                        timeout = 0
+                        while (userData == null && timeout < 50) {
+                            Thread.sleep(100)
+                            timeout++
+                        }
+
+                        userData?.let { user ->
+                            val name = user.getString("name")
+                            val age = user.getInt("age")
+                            val bio = if (user.has("bio") && !user.isNull("bio")) user.getString("bio") else ""
+                            val photoRes = if (user.has("photoRes") && !user.isNull("photoRes"))
+                                user.getString("photoRes")
+                            else
+                                profileImages[index % profileImages.size]
+
+                            val interests = if (user.has("interests") && !user.isNull("interests")) {
+                                val interestsArray = user.getJSONArray("interests")
+                                List(interestsArray.length()) { i -> interestsArray.getString(i) }
+                            } else {
+                                if (locationType == LocationType.COFFEE)
+                                    listOf("Coffee", "Art", "Music", "Reading")
+                                else
+                                    listOf("Foodie", "Travel", "Cooking", "Wine")
+                            }
+
+                            profiles.add(LocationProfile(
+                                id = index + 1,
+                                userId = userId,
+                                name = name,
+                                age = age,
+                                bio = bio,
+                                imageUrl = photoRes,
+                                occupation = if (locationType == LocationType.COFFEE) "Designer" else "Marketing Manager",
+                                interests = interests,
+                                photos = listOf(photoRes),
+                                state = ProfileState.ACTIVE
+                            ))
+
+                            Log.d("LocationDetailScreen", "Loaded profile: $name, age $age")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("LocationDetailScreen", "Failed to fetch user $userId", e)
+                    }
+                }
+
+                profiles
             } catch (e: Exception) {
-                Log.e("LocationDetailScreen", "Failed to fetch active check-ins", e)
-                0 // Return 0 on error
+                Log.e("LocationDetailScreen", "Failed to fetch active users", e)
+                emptyList()
             }
         }
     }
 
-    // Fetch active users count periodically
-    LaunchedEffect(realLocationId) {
-        while (true) {
-            val count = fetchActiveUsersCount()
-            currentBuzzInCount = count
-            Log.d("LocationDetailScreen", "Updated buzz in count: $currentBuzzInCount")
-            kotlinx.coroutines.delay(5000) // Update every 5 seconds
-        }
-    }
-
-    // Generate mock profiles with multiple photos - regenerate when count changes
-    // TODO: Replace with real user data from API
+    // State for storing profiles
     var allProfiles by remember { mutableStateOf(listOf<LocationProfile>()) }
 
-    // Update profiles when buzz in count changes
-    LaunchedEffect(currentBuzzInCount) {
-        // Shuffle names to avoid repetition and create variety
-        val shuffledNames = names.shuffled()
-
-        allProfiles = List(currentBuzzInCount.coerceAtLeast(1)) { i ->
-            val mainPhoto = profileImages[i % profileImages.size]
-            val otherPhotos = profileImages.filterIndexed { idx, _ -> idx != (i % profileImages.size) }
-
-            LocationProfile(
-                id = i + 1,
-                userId = "mock-user-${i + 1}", // Mock userId for now
-                name = shuffledNames[i % shuffledNames.size], // Use shuffled names
-                age = 24 + (i % 10),
-                bio = if (locationType == LocationType.COFFEE) bioCoffee else bioRestaurant,
-                imageUrl = mainPhoto,
-                occupation = if (locationType == LocationType.COFFEE) "Designer" else "Marketing Manager",
-                interests = if (locationType == LocationType.COFFEE)
-                    listOf("Coffee", "Art", "Music", "Reading")
-                else
-                    listOf("Foodie", "Travel", "Cooking", "Wine"),
-                photos = listOf(mainPhoto) + otherPhotos.take(2),
-                state = ProfileState.ACTIVE
-            )
+    // Fetch active users with their profiles periodically
+    LaunchedEffect(realLocationId) {
+        while (true) {
+            val profiles = fetchActiveUsersWithProfiles()
+            allProfiles = profiles
+            currentBuzzInCount = profiles.size
+            Log.d("LocationDetailScreen", "Updated profiles: ${profiles.size} users")
+            kotlinx.coroutines.delay(5000) // Update every 5 seconds
         }
-        Log.d("LocationDetailScreen", "Regenerated ${allProfiles.size} profiles with shuffled names")
     }
 
     // Show all profiles (don't filter out rejected ones, just advance past them)
@@ -405,7 +476,7 @@ fun LocationDetailScreen(
             },
             onAccept = {
                 android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profile.name}")
-                
+
                 // Perform swipe API call with LIKE action
                 coroutineScope.launch {
                     val (success, isMatch) = performSwipe(
@@ -415,6 +486,8 @@ fun LocationDetailScreen(
                         action = "LIKE"
                     )
                     if (success) {
+                        Log.d("LocationDetailScreen", "LIKE swipe recorded. Match: $isMatch")
+
                         // Update profile state to ACCEPTED
                         allProfiles = allProfiles.toMutableList().also { list ->
                             val profileIndex = list.indexOfFirst { it.id == profile.id }
@@ -422,12 +495,14 @@ fun LocationDetailScreen(
                                 list[profileIndex] = list[profileIndex].copy(state = ProfileState.ACCEPTED)
                             }
                         }
-                        
+
                         // Show match notification if it's a match
                         if (isMatch) {
                             matchNotification = "It's a Match with ${profile.name}! 🎉"
                             android.util.Log.d("LocationDetailScreen", "Match detected with ${profile.name}")
                         }
+                    } else {
+                        Log.e("LocationDetailScreen", "Failed to record LIKE swipe")
                     }
                 }
             },
@@ -646,7 +721,7 @@ fun LocationDetailScreen(
                         },
                         onAccept = {
                             android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profile.name}")
-                            
+
                             // Perform swipe API call with LIKE action
                             coroutineScope.launch {
                                 val (success, isMatch) = performSwipe(
@@ -656,6 +731,8 @@ fun LocationDetailScreen(
                                     action = "LIKE"
                                 )
                                 if (success) {
+                                    Log.d("LocationDetailScreen", "LIKE swipe recorded. Match: $isMatch")
+
                                     // Update profile state to ACCEPTED
                                     allProfiles = allProfiles.toMutableList().also { list ->
                                         val profileIndex = list.indexOfFirst { it.id == profile.id }
@@ -663,12 +740,14 @@ fun LocationDetailScreen(
                                             list[profileIndex] = list[profileIndex].copy(state = ProfileState.ACCEPTED)
                                         }
                                     }
-                                    
+
                                     // Show match notification if it's a match
                                     if (isMatch) {
                                         matchNotification = "It's a Match with ${profile.name}! 🎉"
                                         android.util.Log.d("LocationDetailScreen", "Match detected with ${profile.name}")
                                     }
+                                } else {
+                                    Log.e("LocationDetailScreen", "Failed to record LIKE swipe")
                                 }
                             }
                         },
