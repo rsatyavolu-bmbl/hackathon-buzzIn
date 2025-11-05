@@ -83,7 +83,24 @@ val profileImages = listOf(
     "https://images.unsplash.com/photo-1560250097-0b93528c311a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdHxlbnwxfHx8fDE3NjIyMDM1MDl8MA&ixlib=rb-4.1.0&q=80&w=1080"
 )
 
-val names = listOf("Alex", "Jordan", "Casey", "Morgan", "Riley", "Taylor", "Jamie", "Avery", "Quinn", "Drew", "Blake", "Sage")
+val names = listOf(
+    // Female names
+    "Emma", "Olivia", "Ava", "Isabella", "Sophia", "Mia", "Charlotte", "Amelia", "Harper", "Evelyn",
+    "Abigail", "Emily", "Elizabeth", "Sofia", "Avery", "Ella", "Scarlett", "Grace", "Chloe", "Victoria",
+    "Riley", "Aria", "Lily", "Aubrey", "Zoey", "Penelope", "Lillian", "Addison", "Layla", "Natalie",
+    "Camila", "Hannah", "Brooklyn", "Zoe", "Nora", "Leah", "Savannah", "Audrey", "Claire", "Eleanor",
+
+    // Male names
+    "Liam", "Noah", "Oliver", "Elijah", "William", "James", "Benjamin", "Lucas", "Henry", "Alexander",
+    "Mason", "Michael", "Ethan", "Daniel", "Jacob", "Logan", "Jackson", "Sebastian", "Jack", "Aiden",
+    "Owen", "Samuel", "Matthew", "Joseph", "Levi", "Mateo", "David", "John", "Wyatt", "Carter",
+    "Julian", "Luke", "Grayson", "Isaac", "Jayden", "Theodore", "Gabriel", "Anthony", "Dylan", "Leo",
+
+    // Gender-neutral names
+    "Jordan", "Taylor", "Morgan", "Casey", "Avery", "Quinn", "Reese", "Sage", "River", "Phoenix",
+    "Dakota", "Skylar", "Rowan", "Cameron", "Blake", "Charlie", "Drew", "Finley", "Emerson", "Sawyer",
+    "Kennedy", "Hayden", "Payton", "Parker", "Ashton", "Remi", "London", "Elliot", "Kendall", "Marlowe"
+)
 
 // Function to perform swipe and check for match
 suspend fun performSwipe(
@@ -283,6 +300,9 @@ fun LocationDetailScreen(
 
     // Update profiles when buzz in count changes
     LaunchedEffect(currentBuzzInCount) {
+        // Shuffle names to avoid repetition and create variety
+        val shuffledNames = names.shuffled()
+
         allProfiles = List(currentBuzzInCount.coerceAtLeast(1)) { i ->
             val mainPhoto = profileImages[i % profileImages.size]
             val otherPhotos = profileImages.filterIndexed { idx, _ -> idx != (i % profileImages.size) }
@@ -290,7 +310,7 @@ fun LocationDetailScreen(
             LocationProfile(
                 id = i + 1,
                 userId = "mock-user-${i + 1}", // Mock userId for now
-                name = names[i % names.size],
+                name = shuffledNames[i % shuffledNames.size], // Use shuffled names
                 age = 24 + (i % 10),
                 bio = if (locationType == LocationType.COFFEE) bioCoffee else bioRestaurant,
                 imageUrl = mainPhoto,
@@ -303,7 +323,7 @@ fun LocationDetailScreen(
                 state = ProfileState.ACTIVE
             )
         }
-        Log.d("LocationDetailScreen", "Regenerated ${allProfiles.size} profiles")
+        Log.d("LocationDetailScreen", "Regenerated ${allProfiles.size} profiles with shuffled names")
     }
 
     // Filter out swiped profiles
