@@ -42,7 +42,7 @@ val socialPlaces = listOf(
     SocialPlace(2, "Draught House Pub", PlaceType.BAR, LatLng(30.3111, -97.7428), 9),
     SocialPlace(3, "Central Market North Lamar", PlaceType.RESTAURANT, LatLng(30.3077, -97.7399), 4),
     SocialPlace(4, "Mazur Coffee", PlaceType.COFFEE, LatLng(30.31165, -97.7423), 3),
-    SocialPlace(5, "Rudy's BBQ", PlaceType.RESTAURANT, LatLng(30.3076, -97.74195), 7)
+    SocialPlace(5, "Rudys BBQ", PlaceType.RESTAURANT, LatLng(30.3076, -97.74195), 7)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

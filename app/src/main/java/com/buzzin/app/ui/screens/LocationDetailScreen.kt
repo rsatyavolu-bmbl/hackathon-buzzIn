@@ -143,18 +143,23 @@ fun LocationDetailScreen(
             },
             onSelfieCaptured = {
                 showSelfieCapture = false
-                // Move to next profile and keep showing in full screen
-                if (index < profiles.size - 1) {
-                    selectedProfileIndex = index + 1
+                // Get the page index - either from full-screen view or from pager
+                val pageIndex = selectedProfileIndex ?: pagerState.currentPage
+
+                // Move to next profile
+                if (pageIndex < profiles.size - 1) {
+                    // If we're in full-screen mode, update selectedProfileIndex
+                    if (selectedProfileIndex != null) {
+                        selectedProfileIndex = pageIndex + 1
+                    }
+                    // Advance the pager to next profile
                     coroutineScope.launch {
-                        pagerState.animateScrollToPage(index + 1)
+                        pagerState.animateScrollToPage(pageIndex + 1)
                     }
                 } else {
-                    // If this was the last profile, close full screen view
-                    selectedProfileIndex = null
-                    // Ensure pager stays on the last profile
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(index)
+                    // If this was the last profile and we're in full-screen, close it
+                    if (selectedProfileIndex != null) {
+                        selectedProfileIndex = null
                     }
                 }
             }
@@ -176,7 +181,7 @@ fun LocationDetailScreen(
                 profiles = profiles.toMutableList().also { list ->
                     list[index] = list[index].copy(state = ProfileState.ACCEPTED)
                 }
-                selfieCaptureProfileName = profile.name
+                selfieCaptureProfileName = profiles[index].name
                 showSelfieCapture = true
             },
             onReject = {
@@ -330,6 +335,11 @@ fun LocationDetailScreen(
                             selectedProfileIndex = page
                         },
                         onAccept = {
+                            android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profile.name}")
+                            // Update profile state to ACCEPTED
+                            profiles = profiles.toMutableList().also { list ->
+                                list[page] = list[page].copy(state = ProfileState.ACCEPTED)
+                            }
                             selfieCaptureProfileName = profile.name
                             showSelfieCapture = true
                         },
