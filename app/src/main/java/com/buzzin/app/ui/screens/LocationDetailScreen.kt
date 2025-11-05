@@ -12,11 +12,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,6 +64,24 @@ enum class ProfileState {
     ACCEPTED,
     REJECTED
 }
+
+enum class ConnectionStatus {
+    WAITING,
+    CONNECTED,
+    PASSED
+}
+
+// DetailProfile data class for ProfileCardWithActions compatibility
+data class DetailProfile(
+    val id: Int,
+    val name: String,
+    val age: Int,
+    val distance: String,
+    val bio: String,
+    val occupation: String,
+    val interests: List<String>,
+    val photos: List<String>
+)
 
 data class LocationProfile(
     val id: Int,
@@ -182,7 +203,7 @@ suspend fun performSwipe(
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LocationDetailScreen(
-    locationId: Int,
+    @Suppress("UNUSED_PARAMETER") locationId: Int,
     locationName: String,
     locationType: LocationType,
     buzzInCount: Int,
@@ -190,14 +211,6 @@ fun LocationDetailScreen(
     realLocationId: String = "", // Real location UUID from API
     currentUserId: String = "test-user-fixed-id-12345" // Current user's ID
 ) {
-    val icon: ImageVector = if (locationType == LocationType.COFFEE) {
-        Icons.Default.Coffee
-    } else {
-        Icons.Default.Restaurant
-    }
-    
-    val typeLabel = if (locationType == LocationType.COFFEE) "Coffee Shop" else "Restaurant"
-    
     val description = if (locationType == LocationType.COFFEE) {
         "A cozy coffee shop perfect for casual meetups and first dates. Enjoy artisan coffee and a relaxed atmosphere."
     } else {
@@ -207,7 +220,6 @@ fun LocationDetailScreen(
     val bioCoffee = "Coffee enthusiast looking to meet new people ☕"
     val bioRestaurant = "Foodie who loves trying new restaurants 🍽️"
 
-    var selectedProfile by remember { mutableStateOf<LocationProfile?>(null) }
     var selectedProfileIndex by remember { mutableStateOf<Int?>(null) }
     var showSelfieCapture by remember { mutableStateOf(false) }
     var selfieCaptureProfileName by remember { mutableStateOf("") }
@@ -326,8 +338,8 @@ fun LocationDetailScreen(
         Log.d("LocationDetailScreen", "Regenerated ${allProfiles.size} profiles with shuffled names")
     }
 
-    // Filter out swiped profiles
-    val profiles = allProfiles.filter { it.id !in swipedProfileIds }
+    // Show all profiles (don't filter out rejected ones, just advance past them)
+    val profiles = allProfiles
 
     val pagerState = rememberPagerState(pageCount = { profiles.size })
     val coroutineScope = rememberCoroutineScope()
@@ -360,7 +372,6 @@ fun LocationDetailScreen(
                     if (selectedProfileIndex != null) {
                         selectedProfileIndex = null
                     }
-                    selectedProfile = null
                 }
             }
         )
@@ -377,13 +388,16 @@ fun LocationDetailScreen(
             },
             onAccept = {
                 android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profiles[index].name}")
-                // Update profile state to ACCEPTED
+                // Update profile state to ACCEPTED (don't show selfie screen yet)
                 allProfiles = allProfiles.toMutableList().also { list ->
                     val profileIndex = list.indexOfFirst { it.id == profiles[index].id }
                     if (profileIndex != -1) {
                         list[profileIndex] = list[profileIndex].copy(state = ProfileState.ACCEPTED)
                     }
                 }
+            },
+            onWaitingClick = {
+                // Open selfie screen when clicking the waiting pill
                 selfieCaptureProfileName = profiles[index].name
                 showSelfieCapture = true
             },
@@ -408,7 +422,6 @@ fun LocationDetailScreen(
                                 list[profileIndex] = list[profileIndex].copy(state = ProfileState.REJECTED)
                             }
                         }
-                        swipedProfileIds = swipedProfileIds + profile.id
 
                         // Move to next profile and keep showing in full screen
                         if (index < profiles.size - 1) {
@@ -569,20 +582,44 @@ fun LocationDetailScreen(
                     pageSpacing = 8.dp
                 ) { page ->
                     val profile = profiles[page]
-                    ProfileCard(
-                        profile = profile,
+                    // Convert LocationProfile to DetailProfile for ProfileCardWithActions
+                    val profileForCard = DetailProfile(
+                        id = profile.id,
+                        name = profile.name,
+                        age = profile.age,
+                        distance = "At this location",
+                        bio = profile.bio,
+                        occupation = profile.occupation,
+                        interests = profile.interests,
+                        photos = profile.photos
+                    )
+
+                    // Determine connection status based on profile state
+                    val connectionStatus: ConnectionStatus? = when (profile.state) {
+                        ProfileState.ACCEPTED -> ConnectionStatus.WAITING
+                        ProfileState.REJECTED -> ConnectionStatus.PASSED
+                        ProfileState.ACTIVE -> null
+                    }
+
+                    ProfileCardWithActions(
+                        profile = profileForCard,
+                        locationName = locationName,
+                        connectionStatus = connectionStatus,
                         onClick = {
                             selectedProfileIndex = page
                         },
                         onAccept = {
                             android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profile.name}")
-                            // Update profile state to ACCEPTED
+                            // Update profile state to ACCEPTED (don't show selfie screen yet)
                             allProfiles = allProfiles.toMutableList().also { list ->
                                 val profileIndex = list.indexOfFirst { it.id == profile.id }
                                 if (profileIndex != -1) {
                                     list[profileIndex] = list[profileIndex].copy(state = ProfileState.ACCEPTED)
                                 }
                             }
+                        },
+                        onWaitingClick = {
+                            // Open selfie screen when clicking the waiting pill
                             selfieCaptureProfileName = profile.name
                             showSelfieCapture = true
                         },
@@ -605,7 +642,6 @@ fun LocationDetailScreen(
                                             list[profileIndex] = list[profileIndex].copy(state = ProfileState.REJECTED)
                                         }
                                     }
-                                    swipedProfileIds = swipedProfileIds + profile.id
 
                                     // Auto-advance to next profile
                                     if (page < profiles.size - 1) {
@@ -765,19 +801,31 @@ fun ProfileCard(
                             )
                         }
                     } else if (profile.state == ProfileState.REJECTED) {
+                        // Passed Status Pill
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            color = Color(0xFFF97316),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFFEE2E2),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA))
                         ) {
-                            Text(
-                                text = "PASSED",
-                                color = Color.White,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(16.dp),
-                                textAlign = TextAlign.Center
-                            )
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Cancel,
+                                    contentDescription = null,
+                                    tint = Color(0xFFDC2626),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Passed",
+                                    color = Color(0xFFC71212),
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
                     } else {
                         // Action Buttons (only show when ACTIVE)
@@ -829,12 +877,278 @@ fun ProfileCard(
 }
 
 @Composable
+fun ProfileCardWithActions(
+    profile: DetailProfile,
+    locationName: String,
+    connectionStatus: ConnectionStatus?,
+    onClick: () -> Unit,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+    onWaitingClick: () -> Unit = {}
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // Profile Image Section
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = true)
+                    .clickable { onClick() }
+            ) {
+                AsyncImage(
+                    model = profile.photos.firstOrNull(),
+                    contentDescription = profile.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                
+                // Gradient Overlay
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.6f)
+                                ),
+                                startY = 0f,
+                                endY = Float.POSITIVE_INFINITY
+                            )
+                        )
+                )
+                
+                // Profile Info Overlay
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Text(
+                            text = profile.name,
+                            color = Color.White,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = profile.age.toString(),
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 20.sp
+                        )
+                    }
+                    
+                    Row(
+                        modifier = Modifier.padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = locationName,
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
+            
+            // Actions Section
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.1f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    when (connectionStatus) {
+                        ConnectionStatus.WAITING -> {
+                            // Waiting Status Pill
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onWaitingClick() },
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFFFEF3C7),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Schedule,
+                                        contentDescription = null,
+                                        tint = Color(0xFFD97706),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Waiting for response",
+                                        color = Color(0xFFB45309),
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        }
+                        ConnectionStatus.PASSED -> {
+                            // Passed Status Pill
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFFFEE2E2),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Cancel,
+                                        contentDescription = null,
+                                        tint = Color(0xFFDC2626),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Passed",
+                                        color = Color(0xFFC71212),
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        }
+                        ConnectionStatus.CONNECTED -> {
+                            // Connected Status Pill
+                            Surface(
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFFDCFCE7),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBBF7D0))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = null,
+                                        tint = Color(0xFF16A34A),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Connected",
+                                        color = Color(0xFF15803D),
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                            
+                            // Follow up Button
+                            Button(
+                                onClick = onClick,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFFACC15)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Chat,
+                                    contentDescription = "Follow up",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Follow up",
+                                    color = Color.White
+                                )
+                            }
+                        }
+                        null -> {
+                            // Ignore Button
+                            Button(
+                                onClick = onReject,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFF1F5F9)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Cancel,
+                                    contentDescription = "Ignore",
+                                    tint = Color(0xFFEF4444),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Ignore",
+                                    color = Color(0xFF64748B)
+                                )
+                            }
+                            
+                            // Connect Button
+                            Button(
+                                onClick = onAccept,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFFACC15)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = "Connect",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Connect",
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun FullScreenProfileView(
     profile: LocationProfile,
     locationName: String,
     onBack: () -> Unit,
     onAccept: () -> Unit,
-    onReject: () -> Unit
+    onReject: () -> Unit,
+    onWaitingClick: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -976,76 +1290,118 @@ fun FullScreenProfileView(
 
                     // Show state label when not active
                     if (profile.state == ProfileState.ACCEPTED) {
+                        // Waiting Status Pill
                         Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = Color(0xFF22C55E),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onWaitingClick() },
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFFEF3C7),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
                         ) {
-                            Text(
-                                text = "ACCEPTED",
-                                color = Color.White,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(16.dp),
-                                textAlign = TextAlign.Center
-                            )
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Schedule,
+                                    contentDescription = null,
+                                    tint = Color(0xFFD97706),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Waiting for response",
+                                    color = Color(0xFFB45309),
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
                     } else if (profile.state == ProfileState.REJECTED) {
+                        // Passed Status Pill
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            color = Color(0xFFF97316),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFFEE2E2),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA))
                         ) {
-                            Text(
-                                text = "PASSED",
-                                color = Color.White,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(16.dp),
-                                textAlign = TextAlign.Center
-                            )
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Cancel,
+                                    contentDescription = null,
+                                    tint = Color(0xFFDC2626),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Passed",
+                                    color = Color(0xFFC71212),
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
                     } else {
                         // Action Buttons (only show when ACTIVE)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.1f))
                         ) {
-                            // Reject Button
-                            FloatingActionButton(
-                                onClick = onReject,
-                                modifier = Modifier.size(56.dp),
-                                containerColor = Color.White,
-                                elevation = FloatingActionButtonDefaults.elevation(
-                                    defaultElevation = 8.dp
-                                )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Reject",
-                                    tint = Color(0xFFEF4444),
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
+                                // Ignore Button
+                                Button(
+                                    onClick = onReject,
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFF1F5F9)
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Cancel,
+                                        contentDescription = "Ignore",
+                                        tint = Color(0xFFEF4444),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Ignore",
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
 
-                            Spacer(modifier = Modifier.width(48.dp))
-
-                            // Accept Button
-                            FloatingActionButton(
-                                onClick = onAccept,
-                                modifier = Modifier.size(56.dp),
-                                containerColor = Color(0xFFFACC15),
-                                elevation = FloatingActionButtonDefaults.elevation(
-                                    defaultElevation = 8.dp
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Favorite,
-                                    contentDescription = "Accept",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
+                                // Connect Button
+                                Button(
+                                    onClick = onAccept,
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFFACC15)
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = "Connect",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Connect",
+                                        color = Color.White
+                                    )
+                                }
                             }
                         }
                     }
