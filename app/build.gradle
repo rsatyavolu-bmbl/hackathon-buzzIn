@@ -89,11 +89,12 @@ dependencies {
     // Navigation
     implementation 'androidx.navigation:navigation-compose:2.7.5'
     
-    // AWS SDK
-    implementation 'com.amplifyframework:aws-auth-cognito:2.14.5'
-    implementation 'com.amplifyframework:aws-api:2.14.5'
-    implementation 'com.amplifyframework:aws-storage-s3:2.14.5'
-    implementation 'com.amplifyframework:aws-geo-location:2.14.5'
+    // AWS SDK - Gen 2 support (version 2.20.0 compatible with SDK 34)
+    implementation 'com.amplifyframework:core:2.20.0'
+    implementation 'com.amplifyframework:aws-auth-cognito:2.20.0'
+    implementation 'com.amplifyframework:aws-api:2.20.0'
+    implementation 'com.amplifyframework:aws-storage-s3:2.20.0'
+    implementation 'com.amplifyframework:aws-geo-location:2.20.0'
     
     // Location Services
     implementation 'com.google.android.gms:play-services-location:21.0.1'

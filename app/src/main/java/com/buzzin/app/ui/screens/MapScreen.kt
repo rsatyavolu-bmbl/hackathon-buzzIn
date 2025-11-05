@@ -1,5 +1,6 @@
 package com.buzzin.app.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -10,40 +11,194 @@ import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.amplifyframework.api.graphql.model.ModelQuery
+import com.amplifyframework.core.Amplify
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 // Sample data for social places
 data class SocialPlace(
-    val id: Int,
+    val id: String,
     val name: String,
     val type: PlaceType,
     val location: LatLng,
-    val activeUsers: Int = 0
+    val activeUsers: Int = 0,
+    val address: String = ""
 )
 
 enum class PlaceType {
     COFFEE,
     RESTAURANT,
     BAR,
-    CONCERT
+    CONCERT,
+    PARK,
+    GYM,
+    OTHER
 }
 
-// Sample places near 41st and Lamar in Austin, TX
-val socialPlaces = listOf(
-    SocialPlace(1, "Houndstooth Coffee", PlaceType.COFFEE, LatLng(30.3106, -97.74), 4),
-    SocialPlace(2, "Draught House Pub", PlaceType.BAR, LatLng(30.3111, -97.7428), 9),
-    SocialPlace(3, "Central Market North Lamar", PlaceType.RESTAURANT, LatLng(30.3077, -97.7399), 4),
-    SocialPlace(4, "Mazur Coffee", PlaceType.COFFEE, LatLng(30.31165, -97.7423), 3),
-    SocialPlace(5, "Rudy's BBQ", PlaceType.RESTAURANT, LatLng(30.3076, -97.74195), 7)
-)
+// Function to fetch nearby locations from Amplify API
+suspend fun fetchNearbyLocations(latitude: Double, longitude: Double, radiusKm: Double = 10.0): List<SocialPlace> {
+    return withContext(Dispatchers.IO) {
+        try {
+            // Call the custom listNearbyLocations query
+            val queryDoc = """
+                query ListNearbyLocations {
+                  listNearbyLocations(latitude: $latitude, longitude: $longitude, radiusKm: $radiusKm)
+                }
+            """.trimIndent()
+
+            Log.d("MapScreen", "Calling listNearbyLocations API...")
+            Log.d("MapScreen", "Query: $queryDoc")
+
+            var result: List<SocialPlace>? = null
+            var error: Exception? = null
+
+            val request = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
+                queryDoc,
+                emptyMap<String, Any>(),
+                String::class.java,
+                com.amplifyframework.api.graphql.GraphQLRequest.VariablesSerializer { "{}" }
+            )
+
+            Amplify.API.query(
+                request,
+                { response ->
+                    Log.d("MapScreen", "API Response: ${response.data}")
+                    try {
+                        // Parse the GraphQL response
+                        val responseJson = JSONObject(response.data as String)
+                        val locationsJsonString = responseJson.getString("listNearbyLocations")
+                        val jsonArray = JSONArray(locationsJsonString)
+                        val locations = mutableListOf<SocialPlace>()
+
+                        for (i in 0 until jsonArray.length()) {
+                            val location = jsonArray.getJSONObject(i)
+                            val typeStr = location.optString("type", "OTHER")
+                            val placeType = try {
+                                PlaceType.valueOf(typeStr)
+                            } catch (e: Exception) {
+                                PlaceType.OTHER
+                            }
+
+                            locations.add(
+                                SocialPlace(
+                                    id = location.optString("id", ""),
+                                    name = location.getString("name"),
+                                    type = placeType,
+                                    location = LatLng(
+                                        location.getDouble("latitude"),
+                                        location.getDouble("longitude")
+                                    ),
+                                    activeUsers = location.optInt("activeUsers", 0),
+                                    address = location.optString("address", "")
+                                )
+                            )
+                        }
+
+                        result = locations
+                        Log.d("MapScreen", "Parsed ${locations.size} locations")
+                    } catch (e: Exception) {
+                        Log.e("MapScreen", "Error parsing response", e)
+                        error = e
+                    }
+                },
+                { err ->
+                    Log.e("MapScreen", "API Error", err)
+                    error = Exception(err.toString())
+                }
+            )
+
+            // Wait for async result
+            var timeout = 0
+            while (result == null && error == null && timeout < 50) {
+                Thread.sleep(100)
+                timeout++
+            }
+
+            if (error != null) throw error!!
+            result ?: emptyList()
+        } catch (e: Exception) {
+            Log.e("MapScreen", "Failed to fetch locations", e)
+            emptyList()
+        }
+    }
+}
+
+// Function to create a check-in
+suspend fun createCheckIn(userId: String, locationId: String, latitude: Double, longitude: Double): Boolean {
+    return withContext(Dispatchers.IO) {
+        try {
+            val timestamp = java.time.Instant.now().toString()
+            val mutation = """
+                mutation CreateCheckIn {
+                  createCheckIn(input: {
+                    userId: "$userId",
+                    locationId: "$locationId",
+                    checkInTime: "$timestamp",
+                    isActive: true,
+                    latitude: $latitude,
+                    longitude: $longitude
+                  }) {
+                    id
+                    userId
+                    locationId
+                    isActive
+                  }
+                }
+            """.trimIndent()
+
+            Log.d("MapScreen", "Creating check-in: userId=$userId, locationId=$locationId")
+
+            var success = false
+            var error: Exception? = null
+
+            val request = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
+                mutation,
+                emptyMap<String, Any>(),
+                String::class.java,
+                com.amplifyframework.api.graphql.GraphQLRequest.VariablesSerializer { "{}" }
+            )
+
+            Amplify.API.mutate(
+                request,
+                { response ->
+                    Log.d("MapScreen", "Check-in created: ${response.data}")
+                    success = true
+                },
+                { err ->
+                    Log.e("MapScreen", "Check-in failed", err)
+                    error = Exception(err.toString())
+                }
+            )
+
+            // Wait for async result
+            var timeout = 0
+            while (!success && error == null && timeout < 50) {
+                Thread.sleep(100)
+                timeout++
+            }
+
+            if (error != null) throw error!!
+            success
+        } catch (e: Exception) {
+            Log.e("MapScreen", "Failed to create check-in", e)
+            false
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,16 +207,72 @@ fun MapScreen(
     onBuzzIn: (Int, String, LocationType, Int) -> Unit = { _, _, _, _ -> },
     onBuzzOut: () -> Unit = {}
 ) {
+    // Coroutine scope for launching async operations
+    val coroutineScope = rememberCoroutineScope()
+
     // Default location: 41st and Lamar, Austin, TX
     val center41stAndLamar = LatLng(30.30914, -97.7412)
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(center41stAndLamar, 16f)
     }
-    
+
     var selectedPlace by remember { mutableStateOf<SocialPlace?>(null) }
     var showLocationDetail by remember { mutableStateOf(false) }
     // Disable My Location for now (requires runtime permissions)
     var showMyLocation by remember { mutableStateOf(false) }
+
+    // State for locations from API
+    var socialPlaces by remember { mutableStateOf<List<SocialPlace>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var checkInMessage by remember { mutableStateOf<String?>(null) }
+    var isCheckingIn by remember { mutableStateOf(false) }
+
+    // Use a test user ID (in production, this would come from authentication)
+    val currentUserId = "test-user-${System.currentTimeMillis() / 1000000}"
+
+    // Function to reload locations
+    suspend fun reloadLocations() {
+        isLoading = true
+        errorMessage = null
+        try {
+            val fetchedLocations = fetchNearbyLocations(
+                center41stAndLamar.latitude,
+                center41stAndLamar.longitude,
+                radiusKm = 10.0
+            )
+            socialPlaces = fetchedLocations
+            Log.d("MapScreen", "Reloaded ${fetchedLocations.size} locations from API")
+        } catch (e: Exception) {
+            Log.e("MapScreen", "Error reloading locations", e)
+            errorMessage = "Failed to reload locations: ${e.message}"
+        } finally {
+            isLoading = false
+        }
+    }
+
+    // Fetch locations from API when screen loads
+    LaunchedEffect(Unit) {
+        isLoading = true
+        errorMessage = null
+        try {
+            val fetchedLocations = fetchNearbyLocations(
+                center41stAndLamar.latitude,
+                center41stAndLamar.longitude,
+                radiusKm = 10.0
+            )
+            socialPlaces = fetchedLocations
+            Log.d("MapScreen", "Loaded ${fetchedLocations.size} locations from API")
+            if (fetchedLocations.isEmpty()) {
+                errorMessage = "No locations found nearby"
+            }
+        } catch (e: Exception) {
+            Log.e("MapScreen", "Error loading locations", e)
+            errorMessage = "Failed to load locations: ${e.message}"
+        } finally {
+            isLoading = false
+        }
+    }
 
     // Show LocationDetailScreen if user is buzzed in
     if (buzzInState.isBuzzedIn) {
@@ -87,13 +298,14 @@ fun MapScreen(
             color = Color.White
         ) {
             LocationDetailScreen(
-                locationId = selectedPlace!!.id,
+                locationId = selectedPlace!!.id.hashCode(),  // Convert String to Int
                 locationName = selectedPlace!!.name,
                 locationType = when(selectedPlace!!.type) {
                     PlaceType.COFFEE -> LocationType.COFFEE
                     PlaceType.RESTAURANT -> LocationType.RESTAURANT
                     PlaceType.BAR -> LocationType.RESTAURANT
                     PlaceType.CONCERT -> LocationType.RESTAURANT
+                    else -> LocationType.RESTAURANT
                 },
                 buzzInCount = selectedPlace!!.activeUsers,
                 onBack = {
@@ -117,7 +329,7 @@ fun MapScreen(
         ) {
             // Header
             TopAppBar(
-                title = { 
+                title = {
                     Column {
                         Text("Buzz In", fontWeight = FontWeight.Bold)
                         Text(
@@ -178,6 +390,74 @@ fun MapScreen(
             }
         }
 
+        // Loading indicator
+        if (isLoading) {
+            Card(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 100.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Text("Loading locations...")
+                }
+            }
+        }
+
+        // Error message
+        errorMessage?.let { error ->
+            Card(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 100.dp, start = 16.dp, end = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            ) {
+                Text(
+                    text = error,
+                    modifier = Modifier.padding(16.dp),
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+
+        // Check-in message
+        checkInMessage?.let { message ->
+            Card(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 100.dp, start = 16.dp, end = 16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (message.contains("Successfully"))
+                        MaterialTheme.colorScheme.primaryContainer
+                    else
+                        MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = message,
+                        modifier = Modifier.weight(1f),
+                        color = if (message.contains("Successfully"))
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else
+                            MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    TextButton(onClick = { checkInMessage = null }) {
+                        Text("Dismiss")
+                    }
+                }
+            }
+        }
+
         // Floating Action Button - My Location
         FloatingActionButton(
             onClick = {
@@ -225,9 +505,9 @@ fun MapScreen(
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = if (place.type == PlaceType.COFFEE) 
-                                        Icons.Default.Coffee 
-                                    else 
+                                    imageVector = if (place.type == PlaceType.COFFEE)
+                                        Icons.Default.Coffee
+                                    else
                                         Icons.Default.Restaurant,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
@@ -241,7 +521,7 @@ fun MapScreen(
                                 )
                             }
                         }
-                        
+
                         // Active users badge
                         Surface(
                             shape = CircleShape,
@@ -269,9 +549,9 @@ fun MapScreen(
                             }
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     // Action buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -279,22 +559,61 @@ fun MapScreen(
                     ) {
                         Button(
                             onClick = {
-                                // Call onBuzzIn callback with location details
-                                val locationType = when(place.type) {
-                                    PlaceType.COFFEE -> LocationType.COFFEE
-                                    PlaceType.RESTAURANT -> LocationType.RESTAURANT
-                                    PlaceType.BAR -> LocationType.RESTAURANT
-                                    PlaceType.CONCERT -> LocationType.RESTAURANT
+                                selectedPlace?.let { place ->
+                                    coroutineScope.launch {
+                                        isCheckingIn = true
+                                        checkInMessage = null
+
+                                        val success = createCheckIn(
+                                            userId = currentUserId,
+                                            locationId = place.id,
+                                            latitude = place.location.latitude,
+                                            longitude = place.location.longitude
+                                        )
+
+                                        isCheckingIn = false
+
+                                        if (success) {
+                                            checkInMessage = "Successfully buzzed in at ${place.name}!"
+                                            Log.d("MapScreen", "Check-in successful, calling onBuzzIn callback...")
+
+                                            // Call onBuzzIn callback to update buzz in state
+                                            val locationType = when(place.type) {
+                                                PlaceType.COFFEE -> LocationType.COFFEE
+                                                PlaceType.RESTAURANT -> LocationType.RESTAURANT
+                                                PlaceType.BAR -> LocationType.RESTAURANT
+                                                PlaceType.CONCERT -> LocationType.RESTAURANT
+                                                else -> LocationType.RESTAURANT
+                                            }
+                                            onBuzzIn(place.id.hashCode(), place.name, locationType, place.activeUsers)
+                                            showLocationDetail = true
+
+                                            // Reload locations to update active user counts
+                                            reloadLocations()
+                                        } else {
+                                            checkInMessage = "Failed to buzz in. Please try again."
+                                        }
+                                    }
                                 }
-                                onBuzzIn(place.id, place.name, locationType, place.activeUsers)
-                                showLocationDetail = true
                             },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            enabled = !isCheckingIn
                         ) {
-                            Text("Buzz In")
+                            if (isCheckingIn) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text("Buzz In")
+                            }
                         }
                         OutlinedButton(
-                            onClick = { selectedPlace = null },
+                            onClick = {
+                                selectedPlace = null
+                                checkInMessage = null
+                            },
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Close")

@@ -5,6 +5,7 @@ import android.util.Log
 import com.amplifyframework.AmplifyException
 import com.amplifyframework.api.aws.AWSApiPlugin
 import com.amplifyframework.core.Amplify
+import com.amplifyframework.core.configuration.AmplifyOutputs
 import com.buzzin.app.data.DeviceIdManager
 
 class BuzzInApplication : Application() {
@@ -33,11 +34,12 @@ class BuzzInApplication : Application() {
         try {
             // Only add API plugin for now (no auth, no S3 for MVP)
             Amplify.addPlugin(AWSApiPlugin())
-            Amplify.configure(applicationContext)
-            Log.i(TAG, "Initialized Amplify successfully")
+            // Gen 2 configuration using amplify_outputs.json
+            Amplify.configure(AmplifyOutputs(R.raw.amplify_outputs), applicationContext)
+            Log.i(TAG, "Initialized Amplify Gen 2 successfully")
         } catch (error: AmplifyException) {
             Log.e(TAG, "Could not initialize Amplify", error)
-            Log.e(TAG, "Make sure amplifyconfiguration.json is in res/raw/")
+            Log.e(TAG, "Make sure amplify_outputs.json is in res/raw/")
         }
     }
 

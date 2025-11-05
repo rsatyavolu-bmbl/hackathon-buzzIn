@@ -1,9 +1,0 @@
-{
-  "name": "getactiveusersatlocation",
-  "version": "1.0.0",
-  "description": "Lambda function to get active users at a location",
-  "main": "index.js",
-  "dependencies": {
-    "aws-sdk": "^2.1000.0"
-  }
-}
