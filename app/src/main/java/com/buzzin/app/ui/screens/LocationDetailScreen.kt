@@ -664,21 +664,21 @@ fun LocationDetailScreen(
                 contentAlignment = Alignment.Center
             ) {
                 if (profiles.isEmpty()) {
-                    // Show empty state when all profiles have been swiped
+                    // Show empty state when no users are buzzed in
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                         modifier = Modifier.padding(32.dp)
                     ) {
                         Text(
-                            text = "That's everyone!",
+                            text = "No one here yet",
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF334155)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "You've seen all profiles at this location",
+                            text = "People who buzz in will appear here",
                             fontSize = 14.sp,
                             color = Color(0xFF64748B),
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
