@@ -461,6 +461,7 @@ fun LocationDetailScreen(
                     text = locationName,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Medium,
+                    color = Color.Black,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
                 
