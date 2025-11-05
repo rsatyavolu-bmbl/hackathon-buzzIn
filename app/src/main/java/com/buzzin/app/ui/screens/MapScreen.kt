@@ -361,7 +361,6 @@ fun MapScreen(
     }
 
     var selectedPlace by remember { mutableStateOf<SocialPlace?>(null) }
-    var showLocationDetail by remember { mutableStateOf(false) }
 
     // Location permission launcher
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -635,41 +634,6 @@ fun MapScreen(
         return
     }
 
-    // Show LocationDetailScreen when "Buzz In" is clicked from map
-    if (showLocationDetail && selectedPlace != null) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Color.White
-        ) {
-            LocationDetailScreen(
-                locationId = selectedPlace!!.id.hashCode(),  // Convert String to Int
-                locationName = selectedPlace!!.name,
-                locationType = when(selectedPlace!!.type) {
-                    PlaceType.COFFEE -> LocationType.COFFEE
-                    PlaceType.RESTAURANT -> LocationType.RESTAURANT
-                    PlaceType.BAR -> LocationType.RESTAURANT
-                    PlaceType.CONCERT -> LocationType.RESTAURANT
-                    else -> LocationType.RESTAURANT
-                },
-                buzzInCount = selectedPlace!!.activeUsers,
-                onBack = {
-                    // Buzz out - update UI first, then cleanup
-                    checkInMessage = null
-                    showLocationDetail = false
-                    selectedPlace = null
-                    onBuzzOut()
-                    // Then do backend cleanup in background
-                    coroutineScope.launch {
-                        checkOut()
-                        reloadLocations()
-                    }
-                },
-                realLocationId = selectedPlace!!.id,
-                currentUserId = currentUserId
-            )
-        }
-        return
-    }
 
     Box(
         modifier = Modifier
@@ -937,10 +901,24 @@ fun MapScreen(
 
                                         if (success) {
                                             checkInMessage = "Successfully buzzed in at ${place.name}!"
-                                            Log.d("MapScreen", "Check-in successful, showing location detail...")
+                                            Log.d("MapScreen", "Check-in successful, updating global state...")
 
-                                            // Show location detail screen (don't call onBuzzIn to avoid double screen)
-                                            showLocationDetail = true
+                                            // Update global buzz-in state so it persists across navigation
+                                            val locationType = when(place.type) {
+                                                PlaceType.COFFEE -> LocationType.COFFEE
+                                                PlaceType.RESTAURANT -> LocationType.RESTAURANT
+                                                PlaceType.BAR -> LocationType.RESTAURANT
+                                                PlaceType.CONCERT -> LocationType.RESTAURANT
+                                                else -> LocationType.RESTAURANT
+                                            }
+
+                                            onBuzzIn(
+                                                place.id.hashCode(),
+                                                place.name,
+                                                locationType,
+                                                place.activeUsers,
+                                                place.id  // realLocationId
+                                            )
 
                                             // Reload locations to update active user counts
                                             reloadLocations()
