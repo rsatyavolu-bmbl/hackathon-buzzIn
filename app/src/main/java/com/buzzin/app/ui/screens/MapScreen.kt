@@ -593,10 +593,8 @@ fun MapScreen(
                         // Center camera on user location
                         cameraPositionState.position = CameraPosition.fromLatLngZoom(newLocation, 16f)
 
-                        // Fetch nearby locations from Google Places and save to backend
-                        Log.d("MapScreen", "Searching Google Places and saving to backend")
-                        nearbyPlaces = searchAndSavePlacesFromGoogle(placesClient, newLocation)
-                        Log.d("MapScreen", "Found and saved ${nearbyPlaces.size} nearby locations")
+                        // Location fetch will be triggered by LaunchedEffect(userLocation)
+                        Log.d("MapScreen", "User location set, nearby places will be fetched automatically")
                     }
                 } catch (e: Exception) {
                     // Handle location fetch error
@@ -618,7 +616,7 @@ fun MapScreen(
 
     // State for locations from API
     var socialPlaces by remember { mutableStateOf<List<SocialPlace>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(false) }
     var isFetchingPlaces by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var checkInMessage by remember { mutableStateOf<String?>(null) }
@@ -845,13 +843,17 @@ fun MapScreen(
         errorMessage = null
         try {
             val targetLocation = userLocation ?: center41stAndLamar
-            val fetchedLocations = searchAndSavePlacesFromGoogle(
-                placesClient,
-                targetLocation
+            val fetchedLocations = fetchNearbyLocations(
+                targetLocation.latitude,
+                targetLocation.longitude,
+                radiusKm = 1.0
             )
             nearbyPlaces = fetchedLocations
             socialPlaces = fetchedLocations
-            Log.d("MapScreen", "Reloaded ${fetchedLocations.size} locations from Google Places")
+            Log.d("MapScreen", "Reloaded ${fetchedLocations.size} locations from backend")
+            //if (fetchedLocations.isEmpty()) {
+            //    errorMessage = "No locations found nearby"
+            //}
         } catch (e: Exception) {
             Log.e("MapScreen", "Error reloading locations", e)
             errorMessage = "Failed to reload locations: ${e.message}"
@@ -860,27 +862,32 @@ fun MapScreen(
         }
     }
 
-    // Fetch locations from Google Places API when screen loads
-    LaunchedEffect(Unit) {
-        isLoading = true
-        errorMessage = null
-        try {
-            Log.d("MapScreen", "Initial load: Searching Google Places")
-            val fetchedLocations = searchAndSavePlacesFromGoogle(
-                placesClient,
-                center41stAndLamar
-            )
-            nearbyPlaces = fetchedLocations
-            socialPlaces = fetchedLocations
-            Log.d("MapScreen", "Loaded ${fetchedLocations.size} locations from Google Places")
-            if (fetchedLocations.isEmpty()) {
-                errorMessage = "No locations found nearby"
+    // Fetch locations from Google Places API after user location is set
+    LaunchedEffect(userLocation) {
+        // Only fetch if we have a user location and haven't fetched yet
+        val currentUserLocation = userLocation
+        if (currentUserLocation != null && nearbyPlaces.isEmpty() && !isLoading) {
+            isLoading = true
+            errorMessage = null
+            try {
+                Log.d("MapScreen", "Initial load after user location set: Searching Google Places")
+                val fetchedLocations = searchAndSavePlacesFromGoogle(
+                    placesClient,
+                    currentUserLocation
+                )
+                nearbyPlaces = fetchedLocations
+                socialPlaces = fetchedLocations
+                lastFetchLocation = currentUserLocation
+                Log.d("MapScreen", "Loaded ${fetchedLocations.size} locations from Google Places")
+                //if (fetchedLocations.isEmpty()) {
+                //    errorMessage = "No locations found nearby"
+                //}
+            } catch (e: Exception) {
+                Log.e("MapScreen", "Error loading locations", e)
+                errorMessage = "Failed to load locations: ${e.message}"
+            } finally {
+                isLoading = false
             }
-        } catch (e: Exception) {
-            Log.e("MapScreen", "Error loading locations", e)
-            errorMessage = "Failed to load locations: ${e.message}"
-        } finally {
-            isLoading = false
         }
     }
 
@@ -988,7 +995,7 @@ fun MapScreen(
         }
 
         // Unified status indicator for loading, errors, and empty states
-        if (isLoading || isFetchingPlaces || errorMessage != null || (!isLoading && socialPlaces.isEmpty())) {
+        /*if (isLoading || isFetchingPlaces || errorMessage != null || (!isLoading && socialPlaces.isEmpty())) {
             Card(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -1036,7 +1043,7 @@ fun MapScreen(
                     }
                 }
             }
-        }
+        }*/
 
         // Check-in message
         checkInMessage?.let { message ->
@@ -1078,11 +1085,9 @@ fun MapScreen(
                 val targetLocation = userLocation ?: center41stAndLamar
                 cameraPositionState.position = CameraPosition.fromLatLngZoom(targetLocation, 16f)
 
-                // Fetch nearby locations from AWS backend when button is clicked
+                // Reload nearby locations when button is clicked
                 coroutineScope.launch {
-                    Log.d("MapScreen", "My Location button clicked, fetching locations from AWS")
-                    nearbyPlaces = fetchNearbyLocations(targetLocation.latitude, targetLocation.longitude, radiusKm = 10.0)
-                    Log.d("MapScreen", "Fetched ${nearbyPlaces.size} locations")
+                    nearbyPlaces = fetchNearbyLocations(targetLocation.latitude, targetLocation.longitude, radiusKm = 1.0)
                 }
             },
             modifier = Modifier
