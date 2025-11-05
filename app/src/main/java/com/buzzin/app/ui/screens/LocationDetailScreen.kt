@@ -83,7 +83,8 @@ fun LocationDetailScreen(
     locationName: String,
     locationType: LocationType,
     buzzInCount: Int,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    description: String? = null
 ) {
     val icon: ImageVector = if (locationType == LocationType.COFFEE) {
         Icons.Default.Coffee
@@ -92,12 +93,6 @@ fun LocationDetailScreen(
     }
     
     val typeLabel = if (locationType == LocationType.COFFEE) "Coffee Shop" else "Restaurant"
-    
-    val description = if (locationType == LocationType.COFFEE) {
-        "A cozy coffee shop perfect for casual meetups and first dates. Enjoy artisan coffee and a relaxed atmosphere."
-    } else {
-        "A wonderful dining experience awaits. Great ambiance for dates and getting to know someone over delicious food."
-    }
 
     val bioCoffee = "Coffee enthusiast looking to meet new people ☕"
     val bioRestaurant = "Foodie who loves trying new restaurants 🍽️"
@@ -290,20 +285,22 @@ fun LocationDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            // Description
-            Text(
-                text = "About this location",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-            )
-            Text(
-                text = description,
-                color = Color(0xFF64748B),
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
+            // Description (only show if description is not null)
+            description?.let { desc ->
+                Text(
+                    text = "About this location",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                )
+                Text(
+                    text = desc,
+                    color = Color(0xFF64748B),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
 
             // People Section Header
             Text(

@@ -40,7 +40,8 @@ data class SocialPlace(
     val name: String,
     val type: PlaceType,
     val location: LatLng,
-    val activeUsers: Int = 0
+    val activeUsers: Int = 0,
+    val description: String? = null
 )
 
 enum class PlaceType {
@@ -73,11 +74,12 @@ suspend fun fetchNearbyPlaces(
             Place.Field.ID,
             Place.Field.NAME,
             Place.Field.LAT_LNG,
-            Place.Field.TYPES
+            Place.Field.TYPES,
+            Place.Field.EDITORIAL_SUMMARY
         )
 
-        // Create circular search area: 0.002 degrees ≈ 222 meters radius
-        val circle = CircularBounds.newInstance(location, 222.0)
+        // Create circular search area: 400 meters radius
+        val circle = CircularBounds.newInstance(location, 400.0)
 
         // Specify place types to include
         val includedTypes = listOf("restaurant", "cafe", "bar")
@@ -86,7 +88,7 @@ suspend fun fetchNearbyPlaces(
         android.util.Log.d("MapScreen", "Creating SearchNearbyRequest with NEW Places API")
         val searchNearbyRequest = SearchNearbyRequest.builder(circle, placeFields)
             .setIncludedTypes(includedTypes)
-            .setMaxResultCount(5)
+            .setMaxResultCount(10)
             .build()
 
         // Execute search
@@ -108,11 +110,12 @@ suspend fun fetchNearbyPlaces(
             }
 
             SocialPlace(
-                id = place.id.hashCode(),
+                id = place.id?.hashCode() ?: place.name?.hashCode() ?: 0,
                 name = place.name ?: "Unknown Place",
                 type = placeType,
                 location = place.latLng ?: location,
-                activeUsers = (1..10).random()
+                activeUsers = (1..10).random(),
+                description = place.editorialSummary
             )
         }
 
@@ -129,7 +132,7 @@ suspend fun fetchNearbyPlaces(
 @Composable
 fun MapScreen(
     buzzInState: com.buzzin.app.BuzzInState = com.buzzin.app.BuzzInState(),
-    onBuzzIn: (Int, String, LocationType, Int) -> Unit = { _, _, _, _ -> },
+    onBuzzIn: (Int, String, LocationType, Int, String?) -> Unit = { _, _, _, _, _ -> },
     onBuzzOut: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -212,7 +215,8 @@ fun MapScreen(
                 locationName = buzzInState.locationName ?: "",
                 locationType = buzzInState.locationType ?: LocationType.RESTAURANT,
                 buzzInCount = buzzInState.buzzInCount,
-                onBack = onBuzzOut
+                onBack = onBuzzOut,
+                description = buzzInState.description
             )
         }
         return
@@ -239,7 +243,8 @@ fun MapScreen(
                     onBuzzOut()
                     showLocationDetail = false
                     selectedPlace = null
-                }
+                },
+                description = selectedPlace!!.description
             )
         }
         return
@@ -321,18 +326,44 @@ fun MapScreen(
         // Floating Action Button - My Location
         FloatingActionButton(
             onClick = {
-                // Center map on user's location if available, otherwise fallback to default
-                val targetLocation = userLocation ?: center41stAndLamar
-                cameraPositionState.position = CameraPosition.fromLatLngZoom(targetLocation, 16f)
-
-                // Fetch nearby places when button is clicked
+                // Get fresh user location and fetch nearby places
                 scope.launch {
-                    val apiKey = context.packageManager
-                        .getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
-                        .metaData
-                        .getString("com.google.android.geo.API_KEY") ?: ""
-                    android.util.Log.d("MapScreen", "My Location button clicked, fetching places")
-                    nearbyPlaces = fetchNearbyPlaces(context, targetLocation, apiKey)
+                    try {
+                        android.util.Log.d("MapScreen", "My Location button clicked, getting fresh location")
+                        val cancellationTokenSource = CancellationTokenSource()
+                        val location = fusedLocationClient.getCurrentLocation(
+                            Priority.PRIORITY_HIGH_ACCURACY,
+                            cancellationTokenSource.token
+                        ).await()
+
+                        location?.let { loc ->
+                            val newLocation = LatLng(loc.latitude, loc.longitude)
+                            userLocation = newLocation
+                            android.util.Log.d("MapScreen", "Fresh location obtained: ${newLocation.latitude}, ${newLocation.longitude}")
+
+                            // Center camera on new location
+                            cameraPositionState.position = CameraPosition.fromLatLngZoom(newLocation, 16f)
+
+                            // Fetch nearby places at new location
+                            val apiKey = context.packageManager
+                                .getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
+                                .metaData
+                                .getString("com.google.android.geo.API_KEY") ?: ""
+                            android.util.Log.d("MapScreen", "Fetching places at new location")
+                            nearbyPlaces = fetchNearbyPlaces(context, newLocation, apiKey)
+                            android.util.Log.d("MapScreen", "Fetched ${nearbyPlaces.size} nearby places at new location")
+                        } ?: run {
+                            // Fallback if location is null
+                            android.util.Log.w("MapScreen", "Could not get fresh location, using cached location")
+                            val targetLocation = userLocation ?: center41stAndLamar
+                            cameraPositionState.position = CameraPosition.fromLatLngZoom(targetLocation, 16f)
+                        }
+                    } catch (e: Exception) {
+                        // Handle location fetch error
+                        android.util.Log.e("MapScreen", "Error getting fresh location", e)
+                        val targetLocation = userLocation ?: center41stAndLamar
+                        cameraPositionState.position = CameraPosition.fromLatLngZoom(targetLocation, 16f)
+                    }
                 }
             },
             modifier = Modifier
@@ -437,7 +468,7 @@ fun MapScreen(
                                     PlaceType.BAR -> LocationType.RESTAURANT
                                     PlaceType.CONCERT -> LocationType.RESTAURANT
                                 }
-                                onBuzzIn(place.id, place.name, locationType, place.activeUsers)
+                                onBuzzIn(place.id, place.name, locationType, place.activeUsers, place.description)
                                 // Clear local map state - we're now buzzed in, managed by MainActivity
                                 showLocationDetail = false
                                 selectedPlace = null
