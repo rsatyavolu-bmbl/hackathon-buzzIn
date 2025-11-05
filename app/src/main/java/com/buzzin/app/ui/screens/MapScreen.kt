@@ -67,7 +67,8 @@ data class SocialPlace(
     val type: PlaceType,
     val location: LatLng,
     val activeUsers: Int = 0,
-    val address: String = ""
+    val address: String = "",
+    val description: String = ""
 )
 
 enum class PlaceType {
@@ -155,7 +156,7 @@ suspend fun saveLocationToBackend(
 suspend fun searchAndSavePlacesFromGoogle(
     placesClient: PlacesClient,
     center: LatLng,
-    radiusMeters: Double = 5000.0
+    radiusMeters: Double = 400.0
 ): List<SocialPlace> {
     return withContext(Dispatchers.IO) {
         try {
@@ -166,22 +167,22 @@ suspend fun searchAndSavePlacesFromGoogle(
                 Place.Field.NAME,
                 Place.Field.LAT_LNG,
                 Place.Field.ADDRESS,
-                Place.Field.TYPES
+                Place.Field.TYPES,
+                Place.Field.EDITORIAL_SUMMARY
             )
 
             // Search for restaurants, cafes, and bars
             val includedTypes = listOf(
                 "restaurant",
                 "cafe",
-                "bar",
-                "night_club"
+                "bar"
             )
 
             val circle = CircularBounds.newInstance(center, radiusMeters)
 
             val searchRequest = SearchNearbyRequest.builder(circle, placeFields)
                 .setIncludedTypes(includedTypes)
-                .setMaxResultCount(20)
+                .setMaxResultCount(10)
                 .build()
 
             val searchTask = placesClient.searchNearby(searchRequest)
@@ -198,6 +199,7 @@ suspend fun searchAndSavePlacesFromGoogle(
                     val placeName = place.name ?: "Unknown Place"
                     val placeAddress = place.address ?: ""
                     val placeId = place.id ?: UUID.randomUUID().toString()
+                    val placeDescription = place.editorialSummary ?: ""
 
                     // Determine place type from Google types
                     val placeType = when {
@@ -233,7 +235,8 @@ suspend fun searchAndSavePlacesFromGoogle(
                             type = placeType,
                             location = LatLng(placeLatLng.latitude, placeLatLng.longitude),
                             activeUsers = 0, // Will be updated later
-                            address = placeAddress
+                            address = placeAddress,
+                            description = placeDescription
                         )
                     )
                 } catch (e: Exception) {
@@ -592,7 +595,7 @@ fun MapScreen(
 
                         // Fetch nearby locations from Google Places and save to backend
                         Log.d("MapScreen", "Searching Google Places and saving to backend")
-                        nearbyPlaces = searchAndSavePlacesFromGoogle(placesClient, newLocation, radiusMeters = 5000.0)
+                        nearbyPlaces = searchAndSavePlacesFromGoogle(placesClient, newLocation)
                         Log.d("MapScreen", "Found and saved ${nearbyPlaces.size} nearby locations")
                     }
                 } catch (e: Exception) {
@@ -658,8 +661,7 @@ fun MapScreen(
                             try {
                                 val fetchedPlaces = searchAndSavePlacesFromGoogle(
                                     placesClient,
-                                    newLocation,
-                                    radiusMeters = 5000.0
+                                    newLocation
                                 )
                                 nearbyPlaces = fetchedPlaces
                                 socialPlaces = fetchedPlaces
@@ -845,8 +847,7 @@ fun MapScreen(
             val targetLocation = userLocation ?: center41stAndLamar
             val fetchedLocations = searchAndSavePlacesFromGoogle(
                 placesClient,
-                targetLocation,
-                radiusMeters = 5000.0
+                targetLocation
             )
             nearbyPlaces = fetchedLocations
             socialPlaces = fetchedLocations
@@ -867,8 +868,7 @@ fun MapScreen(
             Log.d("MapScreen", "Initial load: Searching Google Places")
             val fetchedLocations = searchAndSavePlacesFromGoogle(
                 placesClient,
-                center41stAndLamar,
-                radiusMeters = 5000.0
+                center41stAndLamar
             )
             nearbyPlaces = fetchedLocations
             socialPlaces = fetchedLocations
