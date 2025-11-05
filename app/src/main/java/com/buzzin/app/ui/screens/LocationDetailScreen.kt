@@ -405,11 +405,29 @@ fun LocationDetailScreen(
             },
             onAccept = {
                 android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profile.name}")
-                // Update profile state to ACCEPTED (don't show selfie screen yet)
-                allProfiles = allProfiles.toMutableList().also { list ->
-                    val profileIndex = list.indexOfFirst { it.id == profile.id }
-                    if (profileIndex != -1) {
-                        list[profileIndex] = list[profileIndex].copy(state = ProfileState.ACCEPTED)
+                
+                // Perform swipe API call with LIKE action
+                coroutineScope.launch {
+                    val (success, isMatch) = performSwipe(
+                        userId = currentUserId,
+                        targetUserId = profile.userId,
+                        locationId = realLocationId.ifEmpty { "mock-location-id" },
+                        action = "LIKE"
+                    )
+                    if (success) {
+                        // Update profile state to ACCEPTED
+                        allProfiles = allProfiles.toMutableList().also { list ->
+                            val profileIndex = list.indexOfFirst { it.id == profile.id }
+                            if (profileIndex != -1) {
+                                list[profileIndex] = list[profileIndex].copy(state = ProfileState.ACCEPTED)
+                            }
+                        }
+                        
+                        // Show match notification if it's a match
+                        if (isMatch) {
+                            matchNotification = "It's a Match with ${profile.name}! 🎉"
+                            android.util.Log.d("LocationDetailScreen", "Match detected with ${profile.name}")
+                        }
                     }
                 }
             },
@@ -628,11 +646,29 @@ fun LocationDetailScreen(
                         },
                         onAccept = {
                             android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profile.name}")
-                            // Update profile state to ACCEPTED (don't show selfie screen yet)
-                            allProfiles = allProfiles.toMutableList().also { list ->
-                                val profileIndex = list.indexOfFirst { it.id == profile.id }
-                                if (profileIndex != -1) {
-                                    list[profileIndex] = list[profileIndex].copy(state = ProfileState.ACCEPTED)
+                            
+                            // Perform swipe API call with LIKE action
+                            coroutineScope.launch {
+                                val (success, isMatch) = performSwipe(
+                                    userId = currentUserId,
+                                    targetUserId = profile.userId,
+                                    locationId = realLocationId.ifEmpty { "mock-location-id" },
+                                    action = "LIKE"
+                                )
+                                if (success) {
+                                    // Update profile state to ACCEPTED
+                                    allProfiles = allProfiles.toMutableList().also { list ->
+                                        val profileIndex = list.indexOfFirst { it.id == profile.id }
+                                        if (profileIndex != -1) {
+                                            list[profileIndex] = list[profileIndex].copy(state = ProfileState.ACCEPTED)
+                                        }
+                                    }
+                                    
+                                    // Show match notification if it's a match
+                                    if (isMatch) {
+                                        matchNotification = "It's a Match with ${profile.name}! 🎉"
+                                        android.util.Log.d("LocationDetailScreen", "Match detected with ${profile.name}")
+                                    }
                                 }
                             }
                         },
