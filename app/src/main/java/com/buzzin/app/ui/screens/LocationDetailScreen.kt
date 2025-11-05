@@ -104,6 +104,8 @@ fun LocationDetailScreen(
 
     var selectedProfile by remember { mutableStateOf<LocationProfile?>(null) }
     var selectedProfileIndex by remember { mutableStateOf<Int?>(null) }
+    var showSelfieCapture by remember { mutableStateOf(false) }
+    var selfieCaptureProfileName by remember { mutableStateOf("") }
     
     // Generate mock profiles with multiple photos
     var profiles by remember {
@@ -131,20 +133,16 @@ fun LocationDetailScreen(
     val pagerState = rememberPagerState(pageCount = { profiles.size })
     val coroutineScope = rememberCoroutineScope()
     
-    // Show full-screen profile view if selected
-    selectedProfileIndex?.let { index ->
-        FullScreenProfileView(
-            profile = profiles[index],
-            locationName = locationName,
+    // Show selfie capture screen if triggered
+    if (showSelfieCapture) {
+        SelfieCaptureScreen(
+            profileName = selfieCaptureProfileName,
+            locationType = locationType.name, // Pass "COFFEE" or "RESTAURANT"
             onBack = {
-                selectedProfileIndex = null
+                showSelfieCapture = false
             },
-            onAccept = {
-                android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profiles[index].name}")
-                // Update profile state to ACCEPTED
-                profiles = profiles.toMutableList().also { list ->
-                    list[index] = list[index].copy(state = ProfileState.ACCEPTED)
-                }
+            onSelfieCaptured = {
+                showSelfieCapture = false
                 // Move to next profile and keep showing in full screen
                 if (index < profiles.size - 1) {
                     selectedProfileIndex = index + 1
@@ -159,6 +157,27 @@ fun LocationDetailScreen(
                         pagerState.animateScrollToPage(index)
                     }
                 }
+            }
+        )
+        return
+    }
+    
+    // Show full-screen profile view if selected
+    selectedProfileIndex?.let { index ->
+        FullScreenProfileView(
+            profile = profiles[index],
+            locationName = locationName,
+            onBack = {
+                selectedProfileIndex = null
+            },
+            onAccept = {
+                android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profiles[index].name}")
+                // Update profile state to ACCEPTED
+                profiles = profiles.toMutableList().also { list ->
+                    list[index] = list[index].copy(state = ProfileState.ACCEPTED)
+                }
+                selfieCaptureProfileName = profile.name
+                showSelfieCapture = true
             },
             onReject = {
                 android.util.Log.d("LocationDetailScreen", "Reject button pressed for ${profiles[index].name}")
@@ -196,39 +215,63 @@ fun LocationDetailScreen(
             shadowElevation = 1.dp,
             color = Color.White
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
+                // Location Name
                 Text(
                     text = locationName,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
                 
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = Color(0xFFFEF3C7),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                // Buzz Ins Count and Buzz Out Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // Buzz Ins Pill
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = Color(0xFFFEF3C7),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = buzzInCount.toString(),
+                                color = Color(0xFFCA8A04),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Buzz Ins",
+                                color = Color(0xFFCA8A04),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                    
+                    // Buzz Out Button
+                    Button(
+                        onClick = onBack,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFACC15),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.height(36.dp)
                     ) {
                         Text(
-                            text = buzzInCount.toString(),
-                            color = Color(0xFFCA8A04),
-                            fontSize = 14.sp,
+                            text = "Buzz Out",
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "Buzz Ins",
-                            color = Color(0xFFCA8A04),
-                            fontSize = 12.sp
                         )
                     }
                 }
@@ -242,69 +285,12 @@ fun LocationDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            // Buzzed In Status Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 12.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFACC15))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "You're buzzed in!",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Others can see your profile here",
-                                color = Color.White.copy(alpha = 0.9f),
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = onBack,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color(0xFFCA8A04)
-                        ),
-                        modifier = Modifier.height(36.dp)
-                    ) {
-                        Text(
-                            text = "Buzz Out",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
             // Description
             Text(
                 text = "About this location",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
             )
             Text(
                 text = description,
@@ -344,17 +330,8 @@ fun LocationDetailScreen(
                             selectedProfileIndex = page
                         },
                         onAccept = {
-                            android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profile.name}")
-                            // Update profile state to ACCEPTED
-                            profiles = profiles.toMutableList().also { list ->
-                                list[page] = list[page].copy(state = ProfileState.ACCEPTED)
-                            }
-                            // Auto-advance to next profile after a brief moment
-                            coroutineScope.launch {
-                                if (page < profiles.size - 1) {
-                                    pagerState.animateScrollToPage(page + 1)
-                                }
-                            }
+                            selfieCaptureProfileName = profile.name
+                            showSelfieCapture = true
                         },
                         onReject = {
                             android.util.Log.d("LocationDetailScreen", "Reject button pressed for ${profile.name}")
