@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.amplifyframework.api.graphql.GraphQLRequest
 import com.amplifyframework.core.Amplify
+import com.buzzin.app.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -208,9 +210,25 @@ fun LocationDetailScreen(
     locationType: LocationType,
     buzzInCount: Int,
     onBack: () -> Unit,
-    realLocationId: String = "", // Real location UUID from API
-    currentUserId: String = "26d085ae-5f8b-4de4-bea7-cb1459f5c0b4" // Current user's ID (Jessica Williams)
+    realLocationId: String = "" // Real location UUID from API
 ) {
+    val context = LocalContext.current
+    
+    // Read user ID from user_config.json
+    val currentUserId = remember {
+        try {
+            val inputStream = context.resources.openRawResource(R.raw.user_config)
+            val jsonString = inputStream.bufferedReader().use { it.readText() }
+            val jsonObject = JSONObject(jsonString)
+            val userId = jsonObject.getString("userId")
+            Log.d("LocationDetailScreen", "Loaded user ID from config: $userId")
+            userId
+        } catch (e: Exception) {
+            Log.e("LocationDetailScreen", "Error reading user_config.json, using default", e)
+            "0f428bde-e950-4c2e-92c4-dc6e4155d4d2" // Fallback to default user ID
+        }
+    }
+    
     val description = if (locationType == LocationType.COFFEE) {
         "A cozy coffee shop perfect for casual meetups and first dates. Enjoy artisan coffee and a relaxed atmosphere."
     } else {
@@ -222,11 +240,135 @@ fun LocationDetailScreen(
     var selfieCaptureProfileName by remember { mutableStateOf("") }
     var matchNotification by remember { mutableStateOf<String?>(null) }
 
-    // Track connection status for each profile by their ID
-    var profileConnectionStatuses by remember { mutableStateOf(mapOf<Int, ConnectionStatus>()) }
+    // Track connection status for each profile by their user ID
+    var profileConnectionStatuses by remember { mutableStateOf(mapOf<String, ConnectionStatus>()) }
 
     // Dynamic buzz in count that updates from API
     var currentBuzzInCount by remember { mutableStateOf(buzzInCount) }
+    
+    // Function to fetch connection status for a specific user from database
+    suspend fun fetchConnectionStatus(targetUserId: String): ConnectionStatus? {
+        return withContext(Dispatchers.IO) {
+            try {
+                // First, check if there's a match
+                val matchQuery = """
+                    query ListMatches {
+                      listMatches(filter: {
+                        or: [
+                          {
+                            and: [
+                              { user1Id: { eq: "$currentUserId" } },
+                              { user2Id: { eq: "$targetUserId" } }
+                            ]
+                          },
+                          {
+                            and: [
+                              { user1Id: { eq: "$targetUserId" } },
+                              { user2Id: { eq: "$currentUserId" } }
+                            ]
+                          }
+                        ]
+                      }) {
+                        items {
+                          id
+                        }
+                      }
+                    }
+                """.trimIndent()
+                
+                var matchResult: String? = null
+                val matchRequest = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
+                    matchQuery,
+                    emptyMap<String, Any>(),
+                    String::class.java,
+                    com.amplifyframework.api.graphql.GraphQLRequest.VariablesSerializer { "{}" }
+                )
+                
+                Amplify.API.query(
+                    matchRequest,
+                    { response -> matchResult = response.data as? String },
+                    { err -> Log.e("LocationDetailScreen", "Failed to fetch matches", err) }
+                )
+                
+                // Wait for result
+                var timeout = 0
+                while (matchResult == null && timeout < 30) {
+                    Thread.sleep(100)
+                    timeout++
+                }
+                
+                // Check if match exists
+                matchResult?.let { result ->
+                    val jsonResponse = JSONObject(result)
+                    val matchesList = jsonResponse.getJSONObject("listMatches")
+                    val matchesItems = matchesList.getJSONArray("items")
+                    if (matchesItems.length() > 0) {
+                        Log.d("LocationDetailScreen", "Found match with user $targetUserId")
+                        return@withContext ConnectionStatus.CONNECTED
+                    }
+                }
+                
+                // If no match, check if current user has swiped on target user
+                val swipeQuery = """
+                    query ListSwipes {
+                      listSwipes(filter: {
+                        userId: { eq: "$currentUserId" },
+                        targetUserId: { eq: "$targetUserId" }
+                      }) {
+                        items {
+                          id
+                          action
+                        }
+                      }
+                    }
+                """.trimIndent()
+                
+                var swipeResult: String? = null
+                val swipeRequest = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
+                    swipeQuery,
+                    emptyMap<String, Any>(),
+                    String::class.java,
+                    com.amplifyframework.api.graphql.GraphQLRequest.VariablesSerializer { "{}" }
+                )
+                
+                Amplify.API.query(
+                    swipeRequest,
+                    { response -> swipeResult = response.data as? String },
+                    { err -> Log.e("LocationDetailScreen", "Failed to fetch swipes", err) }
+                )
+                
+                // Wait for result
+                timeout = 0
+                while (swipeResult == null && timeout < 30) {
+                    Thread.sleep(100)
+                    timeout++
+                }
+                
+                // Check swipe action
+                swipeResult?.let { result ->
+                    val jsonResponse = JSONObject(result)
+                    val swipesList = jsonResponse.getJSONObject("listSwipes")
+                    val swipesItems = swipesList.getJSONArray("items")
+                    if (swipesItems.length() > 0) {
+                        val swipe = swipesItems.getJSONObject(0)
+                        val action = swipe.getString("action")
+                        Log.d("LocationDetailScreen", "Found swipe with user $targetUserId, action: $action")
+                        return@withContext when (action) {
+                            "LIKE" -> ConnectionStatus.WAITING
+                            "PASS", "IGNORE" -> ConnectionStatus.PASSED
+                            else -> null
+                        }
+                    }
+                }
+                
+                // No swipe found, user hasn't interacted yet
+                null
+            } catch (e: Exception) {
+                Log.e("LocationDetailScreen", "Error fetching connection status", e)
+                null
+            }
+        }
+    }
 
     // Function to fetch active users at location with their full profile data
     suspend fun fetchActiveUsersWithProfiles(): List<LocationProfile> {
@@ -401,14 +543,26 @@ fun LocationDetailScreen(
     // State for storing profiles
     var allProfiles by remember { mutableStateOf(listOf<LocationProfile>()) }
 
-    // Fetch active users with their profiles periodically
+    // Fetch active users with their profiles and connection statuses periodically
     LaunchedEffect(realLocationId) {
         while (true) {
             val profiles = fetchActiveUsersWithProfiles()
             allProfiles = profiles
             currentBuzzInCount = profiles.size
             Log.d("LocationDetailScreen", "Updated profiles: ${profiles.size} users")
-            kotlinx.coroutines.delay(5000) // Update every 5 seconds
+            
+            // Fetch connection status for each profile
+            val statuses = mutableMapOf<String, ConnectionStatus>()
+            profiles.forEach { profile ->
+                val status = fetchConnectionStatus(profile.userId)
+                if (status != null) {
+                    statuses[profile.userId] = status
+                    Log.d("LocationDetailScreen", "Connection status for ${profile.name} (${profile.userId}): $status")
+                }
+            }
+            profileConnectionStatuses = statuses
+            
+            kotlinx.coroutines.delay(15000) // Update every 15 seconds
         }
     }
 
@@ -433,7 +587,7 @@ fun LocationDetailScreen(
 
                 // Mark this profile as CONNECTED
                 val currentProfile = profiles[pageIndex]
-                profileConnectionStatuses = profileConnectionStatuses + (currentProfile.id to ConnectionStatus.CONNECTED)
+                profileConnectionStatuses = profileConnectionStatuses + (currentProfile.userId to ConnectionStatus.CONNECTED)
 
                 // Move to next profile
                 if (pageIndex < profiles.size - 1) {
@@ -460,12 +614,8 @@ fun LocationDetailScreen(
     selectedProfileIndex?.let { index ->
         val profile = profiles[index]
 
-        // Determine connection status for full-screen view
-        val fullScreenConnectionStatus = profileConnectionStatuses[profile.id] ?: when (profile.state) {
-            ProfileState.ACCEPTED -> ConnectionStatus.WAITING
-            ProfileState.REJECTED -> ConnectionStatus.PASSED
-            ProfileState.ACTIVE -> null
-        }
+        // Determine connection status for full-screen view from database
+        val fullScreenConnectionStatus = profileConnectionStatuses[profile.userId]
 
         FullScreenProfileView(
             profile = profile,
@@ -705,12 +855,8 @@ fun LocationDetailScreen(
                         photos = profile.photos
                     )
 
-                    // Determine connection status based on profileConnectionStatuses map
-                    val connectionStatus: ConnectionStatus? = profileConnectionStatuses[profile.id] ?: when (profile.state) {
-                        ProfileState.ACCEPTED -> ConnectionStatus.WAITING
-                        ProfileState.REJECTED -> ConnectionStatus.PASSED
-                        ProfileState.ACTIVE -> null
-                    }
+                    // Determine connection status from database
+                    val connectionStatus: ConnectionStatus? = profileConnectionStatuses[profile.userId]
 
                     ProfileCardWithActions(
                         profile = profileForCard,

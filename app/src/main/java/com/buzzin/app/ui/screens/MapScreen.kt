@@ -913,8 +913,7 @@ fun MapScreen(
                         reloadLocations()
                     }
                 },
-                realLocationId = buzzInState.realLocationId ?: "",
-                currentUserId = currentUserId
+                realLocationId = buzzInState.realLocationId ?: ""
             )
         }
         return
