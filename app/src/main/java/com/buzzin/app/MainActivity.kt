@@ -32,10 +32,10 @@ class MainActivity : ComponentActivity() {
 data class BuzzInState(
     val isBuzzedIn: Boolean = false,
     val locationId: Int? = null,
+    val realLocationId: String? = null, // Real UUID from database
     val locationName: String? = null,
     val locationType: com.buzzin.app.ui.screens.LocationType? = null,
-    val buzzInCount: Int = 0,
-    val description: String? = null
+    val buzzInCount: Int = 0
 )
 
 @Composable
@@ -97,14 +97,14 @@ fun MainScreen() {
                 1 -> HomeScreen()
                 2 -> MapScreen(
                     buzzInState = buzzInState,
-                    onBuzzIn = { locationId, locationName, locationType, buzzInCount, description ->
+                    onBuzzIn = { locationId, locationName, locationType, buzzInCount, realLocationId ->
                         buzzInState = BuzzInState(
                             isBuzzedIn = true,
                             locationId = locationId,
+                            realLocationId = realLocationId,
                             locationName = locationName,
                             locationType = locationType,
-                            buzzInCount = buzzInCount,
-                            description = description
+                            buzzInCount = buzzInCount
                         )
                     },
                     onBuzzOut = {
