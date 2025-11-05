@@ -1265,11 +1265,9 @@ fun ProfileCardWithActions(
                 ) {
                     when (connectionStatus) {
                         ConnectionStatus.WAITING -> {
-                            // Waiting Status Pill
+                            // Waiting Status Pill (not clickable)
                             Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onWaitingClick() },
+                                modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
                                 color = Color(0xFFFEF3C7),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
@@ -1349,7 +1347,7 @@ fun ProfileCardWithActions(
                             
                             // Follow up Button
                             Button(
-                                onClick = onClick,
+                                onClick = onWaitingClick,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color(0xFFFACC15)
                                 ),
@@ -1571,11 +1569,9 @@ fun FullScreenProfileView(
                     // Show status/buttons based on connection status
                     when (connectionStatus) {
                         ConnectionStatus.WAITING -> {
-                            // Waiting Status Pill (clickable to send selfie)
+                            // Waiting Status Pill (not clickable)
                             Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onWaitingClick() },
+                                modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
                                 color = Color(0xFFFEF3C7),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
@@ -1593,7 +1589,7 @@ fun FullScreenProfileView(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Send Selfie",
+                                        text = "Waiting for response",
                                         color = Color(0xFFB45309),
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.SemiBold
@@ -1635,9 +1631,9 @@ fun FullScreenProfileView(
                                     }
                                 }
 
-                                // Follow Up Button (clickable)
+                                // Follow Up Button (clickable - opens selfie screen)
                                 Button(
-                                    onClick = { /* TODO: Add follow up action */ },
+                                    onClick = onWaitingClick,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(48.dp),
