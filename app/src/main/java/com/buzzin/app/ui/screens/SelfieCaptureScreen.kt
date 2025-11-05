@@ -58,6 +58,7 @@ fun SelfieCaptureScreen(
     var capturedImage by remember { mutableStateOf<Bitmap?>(null) }
     var showSuccessMessage by remember { mutableStateOf(false) }
     var selectedLocationText by remember { mutableStateOf<String?>(null) }
+    var isCapturing by remember { mutableStateOf(false) }
     
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     
@@ -144,8 +145,13 @@ fun SelfieCaptureScreen(
                 CameraPreview(
                     context = context,
                     lifecycleOwner = lifecycleOwner,
+                    isCapturing = isCapturing,
                     onImageCaptured = { bitmap ->
                         capturedImage = bitmap
+                        isCapturing = false
+                    },
+                    onCaptureFailed = {
+                        isCapturing = false
                     }
                 )
             }
@@ -213,17 +219,25 @@ fun SelfieCaptureScreen(
                     )
                     
                     FloatingActionButton(
-                        onClick = { /* Capture handled in CameraPreview */ },
+                        onClick = { isCapturing = true },
                         modifier = Modifier.size(72.dp),
-                        containerColor = Color.White,
+                        containerColor = if (isCapturing) Color.Gray else Color.White,
                         shape = CircleShape
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.CameraAlt,
-                            contentDescription = "Capture",
-                            tint = Color(0xFFFACC15),
-                            modifier = Modifier.size(36.dp)
-                        )
+                        if (isCapturing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(36.dp),
+                                color = Color(0xFFFACC15),
+                                strokeWidth = 3.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = "Capture",
+                                tint = Color(0xFFFACC15),
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
                     }
                 }
             } else {
@@ -445,10 +459,34 @@ fun SelfieCaptureScreen(
 fun CameraPreview(
     context: Context,
     lifecycleOwner: androidx.lifecycle.LifecycleOwner,
-    onImageCaptured: (Bitmap) -> Unit
+    isCapturing: Boolean,
+    onImageCaptured: (Bitmap) -> Unit,
+    onCaptureFailed: () -> Unit
 ) {
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val imageCapture = remember { ImageCapture.Builder().build() }
+    
+    // Trigger capture when isCapturing becomes true
+    LaunchedEffect(isCapturing) {
+        if (isCapturing) {
+            val executor = ContextCompat.getMainExecutor(context)
+            imageCapture.takePicture(
+                executor,
+                object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onCaptureSuccess(image: ImageProxy) {
+                        val bitmap = imageProxyToBitmap(image)
+                        onImageCaptured(bitmap)
+                        image.close()
+                    }
+                    
+                    override fun onError(exception: ImageCaptureException) {
+                        exception.printStackTrace()
+                        onCaptureFailed()
+                    }
+                }
+            )
+        }
+    }
     
     AndroidView(
         factory = { ctx ->
@@ -477,23 +515,6 @@ fun CameraPreview(
                     e.printStackTrace()
                 }
             }, executor)
-            
-            previewView.setOnClickListener {
-                imageCapture.takePicture(
-                    executor,
-                    object : ImageCapture.OnImageCapturedCallback() {
-                        override fun onCaptureSuccess(image: ImageProxy) {
-                            val bitmap = imageProxyToBitmap(image)
-                            onImageCaptured(bitmap)
-                            image.close()
-                        }
-                        
-                        override fun onError(exception: ImageCaptureException) {
-                            exception.printStackTrace()
-                        }
-                    }
-                )
-            }
             
             previewView
         },
