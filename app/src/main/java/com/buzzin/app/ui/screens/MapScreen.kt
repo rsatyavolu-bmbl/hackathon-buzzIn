@@ -1,6 +1,9 @@
 package com.buzzin.app.ui.screens
 
-import android.util.Log
+import android.Manifest
+import android.annotation.SuppressLint
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -11,267 +14,194 @@ import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.amplifyframework.api.graphql.model.ModelQuery
-import com.amplifyframework.core.Amplify
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.tasks.CancellationTokenSource
+import com.google.android.libraries.places.api.Places
+import com.google.android.libraries.places.api.model.Place
+import com.google.android.libraries.places.api.model.CircularBounds
+import com.google.android.libraries.places.api.net.SearchNearbyRequest
 import com.google.maps.android.compose.*
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.coroutines.tasks.await
 
 // Sample data for social places
 data class SocialPlace(
-    val id: String,
+    val id: Int,
     val name: String,
     val type: PlaceType,
     val location: LatLng,
     val activeUsers: Int = 0,
-    val address: String = ""
+    val description: String? = null
 )
 
 enum class PlaceType {
     COFFEE,
     RESTAURANT,
     BAR,
-    CONCERT,
-    PARK,
-    GYM,
-    OTHER
+    CONCERT
 }
 
-// Function to fetch nearby locations from Amplify API
-suspend fun fetchNearbyLocations(latitude: Double, longitude: Double, radiusKm: Double = 10.0): List<SocialPlace> {
-    return withContext(Dispatchers.IO) {
-        try {
-            // Call the custom listNearbyLocations query
-            val queryDoc = """
-                query ListNearbyLocations {
-                  listNearbyLocations(latitude: $latitude, longitude: $longitude, radiusKm: $radiusKm)
-                }
-            """.trimIndent()
+// Function to fetch nearby places using Google Places API (New)
+suspend fun fetchNearbyPlaces(
+    context: android.content.Context,
+    location: LatLng,
+    apiKey: String
+): List<SocialPlace> {
+    return try {
+        android.util.Log.d("MapScreen", "Starting to fetch nearby places at location: ${location.latitude}, ${location.longitude}")
+        android.util.Log.d("MapScreen", "API Key available: ${apiKey.isNotEmpty()}")
 
-            Log.d("MapScreen", "Calling listNearbyLocations API...")
-            Log.d("MapScreen", "Query: $queryDoc")
+        // Initialize Places API if not already initialized
+        if (!Places.isInitialized()) {
+            android.util.Log.d("MapScreen", "Initializing Places API")
+            Places.initialize(context, apiKey)
+        }
 
-            var result: List<SocialPlace>? = null
-            var error: Exception? = null
+        val placesClient = Places.createClient(context)
 
-            val request = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
-                queryDoc,
-                emptyMap<String, Any>(),
-                String::class.java,
-                com.amplifyframework.api.graphql.GraphQLRequest.VariablesSerializer { "{}" }
-            )
+        // Define fields to return in Place objects
+        val placeFields = listOf(
+            Place.Field.ID,
+            Place.Field.NAME,
+            Place.Field.LAT_LNG,
+            Place.Field.TYPES,
+            Place.Field.EDITORIAL_SUMMARY
+        )
 
-            Amplify.API.query(
-                request,
-                { response ->
-                    Log.d("MapScreen", "API Response: ${response.data}")
-                    try {
-                        // Parse the GraphQL response
-                        val responseJson = JSONObject(response.data as String)
-                        val locationsJsonString = responseJson.getString("listNearbyLocations")
-                        val jsonArray = JSONArray(locationsJsonString)
-                        val locations = mutableListOf<SocialPlace>()
+        // Create circular search area: 400 meters radius
+        val circle = CircularBounds.newInstance(location, 400.0)
 
-                        for (i in 0 until jsonArray.length()) {
-                            val location = jsonArray.getJSONObject(i)
-                            val typeStr = location.optString("type", "OTHER")
-                            val placeType = try {
-                                PlaceType.valueOf(typeStr)
-                            } catch (e: Exception) {
-                                PlaceType.OTHER
-                            }
+        // Specify place types to include
+        val includedTypes = listOf("restaurant", "cafe", "bar")
 
-                            locations.add(
-                                SocialPlace(
-                                    id = location.optString("id", ""),
-                                    name = location.getString("name"),
-                                    type = placeType,
-                                    location = LatLng(
-                                        location.getDouble("latitude"),
-                                        location.getDouble("longitude")
-                                    ),
-                                    activeUsers = location.optInt("activeUsers", 0),
-                                    address = location.optString("address", "")
-                                )
-                            )
-                        }
+        // Build the search request using SearchNearbyRequest (NEW API)
+        android.util.Log.d("MapScreen", "Creating SearchNearbyRequest with NEW Places API")
+        val searchNearbyRequest = SearchNearbyRequest.builder(circle, placeFields)
+            .setIncludedTypes(includedTypes)
+            .setMaxResultCount(10)
+            .build()
 
-                        result = locations
-                        Log.d("MapScreen", "Parsed ${locations.size} locations")
-                    } catch (e: Exception) {
-                        Log.e("MapScreen", "Error parsing response", e)
-                        error = e
-                    }
-                },
-                { err ->
-                    Log.e("MapScreen", "API Error", err)
-                    error = Exception(err.toString())
-                }
-            )
+        // Execute search
+        android.util.Log.d("MapScreen", "Executing searchNearby request")
+        val response = placesClient.searchNearby(searchNearbyRequest).await()
 
-            // Wait for async result
-            var timeout = 0
-            while (result == null && error == null && timeout < 50) {
-                Thread.sleep(100)
-                timeout++
+        android.util.Log.d("MapScreen", "Received ${response.places.size} places from API")
+
+        // Convert results to SocialPlace objects
+        val socialPlaces = response.places.map { place ->
+            val types = place.placeTypes ?: emptyList()
+            android.util.Log.d("MapScreen", "Place: ${place.name}, Types: $types")
+
+            val placeType = when {
+                types.contains("cafe") -> PlaceType.COFFEE
+                types.contains("bar") -> PlaceType.BAR
+                types.contains("restaurant") -> PlaceType.RESTAURANT
+                else -> PlaceType.RESTAURANT
             }
 
-            if (error != null) throw error!!
-            result ?: emptyList()
-        } catch (e: Exception) {
-            Log.e("MapScreen", "Failed to fetch locations", e)
-            emptyList()
+            SocialPlace(
+                id = place.id?.hashCode() ?: place.name?.hashCode() ?: 0,
+                name = place.name ?: "Unknown Place",
+                type = placeType,
+                location = place.latLng ?: location,
+                activeUsers = (1..10).random(),
+                description = place.editorialSummary
+            )
         }
+
+        android.util.Log.d("MapScreen", "Returning ${socialPlaces.size} places")
+        socialPlaces
+    } catch (e: Exception) {
+        android.util.Log.e("MapScreen", "Error fetching nearby places: ${e.message}", e)
+        emptyList()
     }
 }
 
-// Function to create a check-in
-suspend fun createCheckIn(userId: String, locationId: String, latitude: Double, longitude: Double): Boolean {
-    return withContext(Dispatchers.IO) {
-        try {
-            val timestamp = java.time.Instant.now().toString()
-            val mutation = """
-                mutation CreateCheckIn {
-                  createCheckIn(input: {
-                    userId: "$userId",
-                    locationId: "$locationId",
-                    checkInTime: "$timestamp",
-                    isActive: true,
-                    latitude: $latitude,
-                    longitude: $longitude
-                  }) {
-                    id
-                    userId
-                    locationId
-                    isActive
-                  }
-                }
-            """.trimIndent()
-
-            Log.d("MapScreen", "Creating check-in: userId=$userId, locationId=$locationId")
-
-            var success = false
-            var error: Exception? = null
-
-            val request = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
-                mutation,
-                emptyMap<String, Any>(),
-                String::class.java,
-                com.amplifyframework.api.graphql.GraphQLRequest.VariablesSerializer { "{}" }
-            )
-
-            Amplify.API.mutate(
-                request,
-                { response ->
-                    Log.d("MapScreen", "Check-in created: ${response.data}")
-                    success = true
-                },
-                { err ->
-                    Log.e("MapScreen", "Check-in failed", err)
-                    error = Exception(err.toString())
-                }
-            )
-
-            // Wait for async result
-            var timeout = 0
-            while (!success && error == null && timeout < 50) {
-                Thread.sleep(100)
-                timeout++
-            }
-
-            if (error != null) throw error!!
-            success
-        } catch (e: Exception) {
-            Log.e("MapScreen", "Failed to create check-in", e)
-            false
-        }
-    }
-}
-
+@SuppressLint("MissingPermission")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     buzzInState: com.buzzin.app.BuzzInState = com.buzzin.app.BuzzInState(),
-    onBuzzIn: (Int, String, LocationType, Int) -> Unit = { _, _, _, _ -> },
+    onBuzzIn: (Int, String, LocationType, Int, String?) -> Unit = { _, _, _, _, _ -> },
     onBuzzOut: () -> Unit = {}
 ) {
-    // Coroutine scope for launching async operations
-    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
 
-    // Default location: 41st and Lamar, Austin, TX
+    // Default location: 41st and Lamar, Austin, TX (used as fallback)
     val center41stAndLamar = LatLng(30.30914, -97.7412)
+    var userLocation by remember { mutableStateOf<LatLng?>(null) }
+    var locationPermissionGranted by remember { mutableStateOf(false) }
+    var nearbyPlaces by remember { mutableStateOf<List<SocialPlace>>(emptyList()) }
+
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(center41stAndLamar, 16f)
     }
 
     var selectedPlace by remember { mutableStateOf<SocialPlace?>(null) }
     var showLocationDetail by remember { mutableStateOf(false) }
-    // Disable My Location for now (requires runtime permissions)
-    var showMyLocation by remember { mutableStateOf(false) }
 
-    // State for locations from API
-    var socialPlaces by remember { mutableStateOf<List<SocialPlace>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var checkInMessage by remember { mutableStateOf<String?>(null) }
-    var isCheckingIn by remember { mutableStateOf(false) }
+    // Location permission launcher
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        locationPermissionGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                                    permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
 
-    // Use a test user ID (in production, this would come from authentication)
-    val currentUserId = "test-user-${System.currentTimeMillis() / 1000000}"
+        if (locationPermissionGranted) {
+            // Get user location when permission is granted
+            scope.launch {
+                try {
+                    val cancellationTokenSource = CancellationTokenSource()
+                    val location = fusedLocationClient.getCurrentLocation(
+                        Priority.PRIORITY_HIGH_ACCURACY,
+                        cancellationTokenSource.token
+                    ).await()
 
-    // Function to reload locations
-    suspend fun reloadLocations() {
-        isLoading = true
-        errorMessage = null
-        try {
-            val fetchedLocations = fetchNearbyLocations(
-                center41stAndLamar.latitude,
-                center41stAndLamar.longitude,
-                radiusKm = 10.0
-            )
-            socialPlaces = fetchedLocations
-            Log.d("MapScreen", "Reloaded ${fetchedLocations.size} locations from API")
-        } catch (e: Exception) {
-            Log.e("MapScreen", "Error reloading locations", e)
-            errorMessage = "Failed to reload locations: ${e.message}"
-        } finally {
-            isLoading = false
+                    location?.let { loc ->
+                        val newLocation = LatLng(loc.latitude, loc.longitude)
+                        userLocation = newLocation
+                        android.util.Log.d("MapScreen", "User location obtained: ${newLocation.latitude}, ${newLocation.longitude}")
+
+                        // Center camera on user location
+                        cameraPositionState.position = CameraPosition.fromLatLngZoom(newLocation, 16f)
+
+                        // Fetch nearby places
+                        val apiKey = context.packageManager
+                            .getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
+                            .metaData
+                            .getString("com.google.android.geo.API_KEY") ?: ""
+                        android.util.Log.d("MapScreen", "About to fetch nearby places after getting location")
+                        nearbyPlaces = fetchNearbyPlaces(context, newLocation, apiKey)
+                        android.util.Log.d("MapScreen", "Fetched ${nearbyPlaces.size} nearby places")
+                    }
+                } catch (e: Exception) {
+                    // Handle location fetch error
+                    android.util.Log.e("MapScreen", "Error getting location", e)
+                }
+            }
         }
     }
 
-    // Fetch locations from API when screen loads
+    // Request location permission on first composition
     LaunchedEffect(Unit) {
-        isLoading = true
-        errorMessage = null
-        try {
-            val fetchedLocations = fetchNearbyLocations(
-                center41stAndLamar.latitude,
-                center41stAndLamar.longitude,
-                radiusKm = 10.0
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
             )
-            socialPlaces = fetchedLocations
-            Log.d("MapScreen", "Loaded ${fetchedLocations.size} locations from API")
-            if (fetchedLocations.isEmpty()) {
-                errorMessage = "No locations found nearby"
-            }
-        } catch (e: Exception) {
-            Log.e("MapScreen", "Error loading locations", e)
-            errorMessage = "Failed to load locations: ${e.message}"
-        } finally {
-            isLoading = false
-        }
+        )
     }
 
     // Show LocationDetailScreen if user is buzzed in
@@ -285,7 +215,8 @@ fun MapScreen(
                 locationName = buzzInState.locationName ?: "",
                 locationType = buzzInState.locationType ?: LocationType.RESTAURANT,
                 buzzInCount = buzzInState.buzzInCount,
-                onBack = onBuzzOut
+                onBack = onBuzzOut,
+                description = buzzInState.description
             )
         }
         return
@@ -298,14 +229,13 @@ fun MapScreen(
             color = Color.White
         ) {
             LocationDetailScreen(
-                locationId = selectedPlace!!.id.hashCode(),  // Convert String to Int
+                locationId = selectedPlace!!.id,
                 locationName = selectedPlace!!.name,
                 locationType = when(selectedPlace!!.type) {
                     PlaceType.COFFEE -> LocationType.COFFEE
                     PlaceType.RESTAURANT -> LocationType.RESTAURANT
                     PlaceType.BAR -> LocationType.RESTAURANT
                     PlaceType.CONCERT -> LocationType.RESTAURANT
-                    else -> LocationType.RESTAURANT
                 },
                 buzzInCount = selectedPlace!!.activeUsers,
                 onBack = {
@@ -313,7 +243,8 @@ fun MapScreen(
                     onBuzzOut()
                     showLocationDetail = false
                     selectedPlace = null
-                }
+                },
+                description = selectedPlace!!.description
             )
         }
         return
@@ -329,7 +260,7 @@ fun MapScreen(
         ) {
             // Header
             TopAppBar(
-                title = {
+                title = { 
                     Column {
                         Text("Buzz In", fontWeight = FontWeight.Bold)
                         Text(
@@ -354,7 +285,7 @@ fun MapScreen(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
-                    isMyLocationEnabled = showMyLocation,
+                    isMyLocationEnabled = locationPermissionGranted,
                     mapType = MapType.NORMAL
                 ),
                 uiSettings = MapUiSettings(
@@ -367,16 +298,18 @@ fun MapScreen(
                     rotationGesturesEnabled = true
                 )
             ) {
-                // User's current location marker
-                Marker(
-                    state = MarkerState(position = center41stAndLamar),
-                    title = "You are here",
-                    snippet = "Your current location",
-                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)
-                )
+                // User's current location marker (custom blue marker)
+                userLocation?.let { location ->
+                    Marker(
+                        state = MarkerState(position = location),
+                        title = "You are here",
+                        snippet = "Your current location",
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)
+                    )
+                }
 
-                // Add markers for each social place
-                socialPlaces.forEach { place ->
+                // Add markers for each nearby place
+                nearbyPlaces.forEach { place ->
                     Marker(
                         state = MarkerState(position = place.location),
                         title = place.name,
@@ -390,79 +323,48 @@ fun MapScreen(
             }
         }
 
-        // Loading indicator
-        if (isLoading) {
-            Card(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 100.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    Text("Loading locations...")
-                }
-            }
-        }
-
-        // Error message
-        errorMessage?.let { error ->
-            Card(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 100.dp, start = 16.dp, end = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-            ) {
-                Text(
-                    text = error,
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-            }
-        }
-
-        // Check-in message
-        checkInMessage?.let { message ->
-            Card(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 100.dp, start = 16.dp, end = 16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (message.contains("Successfully"))
-                        MaterialTheme.colorScheme.primaryContainer
-                    else
-                        MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = message,
-                        modifier = Modifier.weight(1f),
-                        color = if (message.contains("Successfully"))
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        else
-                            MaterialTheme.colorScheme.onErrorContainer
-                    )
-                    TextButton(onClick = { checkInMessage = null }) {
-                        Text("Dismiss")
-                    }
-                }
-            }
-        }
-
         // Floating Action Button - My Location
         FloatingActionButton(
             onClick = {
-                // Center map on 41st and Lamar
-                cameraPositionState.position = CameraPosition.fromLatLngZoom(center41stAndLamar, 16f)
+                // Get fresh user location and fetch nearby places
+                scope.launch {
+                    try {
+                        android.util.Log.d("MapScreen", "My Location button clicked, getting fresh location")
+                        val cancellationTokenSource = CancellationTokenSource()
+                        val location = fusedLocationClient.getCurrentLocation(
+                            Priority.PRIORITY_HIGH_ACCURACY,
+                            cancellationTokenSource.token
+                        ).await()
+
+                        location?.let { loc ->
+                            val newLocation = LatLng(loc.latitude, loc.longitude)
+                            userLocation = newLocation
+                            android.util.Log.d("MapScreen", "Fresh location obtained: ${newLocation.latitude}, ${newLocation.longitude}")
+
+                            // Center camera on new location
+                            cameraPositionState.position = CameraPosition.fromLatLngZoom(newLocation, 16f)
+
+                            // Fetch nearby places at new location
+                            val apiKey = context.packageManager
+                                .getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
+                                .metaData
+                                .getString("com.google.android.geo.API_KEY") ?: ""
+                            android.util.Log.d("MapScreen", "Fetching places at new location")
+                            nearbyPlaces = fetchNearbyPlaces(context, newLocation, apiKey)
+                            android.util.Log.d("MapScreen", "Fetched ${nearbyPlaces.size} nearby places at new location")
+                        } ?: run {
+                            // Fallback if location is null
+                            android.util.Log.w("MapScreen", "Could not get fresh location, using cached location")
+                            val targetLocation = userLocation ?: center41stAndLamar
+                            cameraPositionState.position = CameraPosition.fromLatLngZoom(targetLocation, 16f)
+                        }
+                    } catch (e: Exception) {
+                        // Handle location fetch error
+                        android.util.Log.e("MapScreen", "Error getting fresh location", e)
+                        val targetLocation = userLocation ?: center41stAndLamar
+                        cameraPositionState.position = CameraPosition.fromLatLngZoom(targetLocation, 16f)
+                    }
+                }
             },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -505,9 +407,9 @@ fun MapScreen(
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = if (place.type == PlaceType.COFFEE)
-                                        Icons.Default.Coffee
-                                    else
+                                    imageVector = if (place.type == PlaceType.COFFEE) 
+                                        Icons.Default.Coffee 
+                                    else 
                                         Icons.Default.Restaurant,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
@@ -521,7 +423,7 @@ fun MapScreen(
                                 )
                             }
                         }
-
+                        
                         // Active users badge
                         Surface(
                             shape = CircleShape,
@@ -549,9 +451,9 @@ fun MapScreen(
                             }
                         }
                     }
-
+                    
                     Spacer(modifier = Modifier.height(16.dp))
-
+                    
                     // Action buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -559,61 +461,24 @@ fun MapScreen(
                     ) {
                         Button(
                             onClick = {
-                                selectedPlace?.let { place ->
-                                    coroutineScope.launch {
-                                        isCheckingIn = true
-                                        checkInMessage = null
-
-                                        val success = createCheckIn(
-                                            userId = currentUserId,
-                                            locationId = place.id,
-                                            latitude = place.location.latitude,
-                                            longitude = place.location.longitude
-                                        )
-
-                                        isCheckingIn = false
-
-                                        if (success) {
-                                            checkInMessage = "Successfully buzzed in at ${place.name}!"
-                                            Log.d("MapScreen", "Check-in successful, calling onBuzzIn callback...")
-
-                                            // Call onBuzzIn callback to update buzz in state
-                                            val locationType = when(place.type) {
-                                                PlaceType.COFFEE -> LocationType.COFFEE
-                                                PlaceType.RESTAURANT -> LocationType.RESTAURANT
-                                                PlaceType.BAR -> LocationType.RESTAURANT
-                                                PlaceType.CONCERT -> LocationType.RESTAURANT
-                                                else -> LocationType.RESTAURANT
-                                            }
-                                            onBuzzIn(place.id.hashCode(), place.name, locationType, place.activeUsers)
-                                            showLocationDetail = true
-
-                                            // Reload locations to update active user counts
-                                            reloadLocations()
-                                        } else {
-                                            checkInMessage = "Failed to buzz in. Please try again."
-                                        }
-                                    }
+                                // Call onBuzzIn callback with location details
+                                val locationType = when(place.type) {
+                                    PlaceType.COFFEE -> LocationType.COFFEE
+                                    PlaceType.RESTAURANT -> LocationType.RESTAURANT
+                                    PlaceType.BAR -> LocationType.RESTAURANT
+                                    PlaceType.CONCERT -> LocationType.RESTAURANT
                                 }
+                                onBuzzIn(place.id, place.name, locationType, place.activeUsers, place.description)
+                                // Clear local map state - we're now buzzed in, managed by MainActivity
+                                showLocationDetail = false
+                                selectedPlace = null
                             },
-                            modifier = Modifier.weight(1f),
-                            enabled = !isCheckingIn
+                            modifier = Modifier.weight(1f)
                         ) {
-                            if (isCheckingIn) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text("Buzz In")
-                            }
+                            Text("Buzz In")
                         }
                         OutlinedButton(
-                            onClick = {
-                                selectedPlace = null
-                                checkInMessage = null
-                            },
+                            onClick = { selectedPlace = null },
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Close")

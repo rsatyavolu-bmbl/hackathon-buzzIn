@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -47,6 +48,12 @@ enum class LocationType {
     RESTAURANT
 }
 
+enum class ProfileState {
+    ACTIVE,
+    ACCEPTED,
+    REJECTED
+}
+
 data class LocationProfile(
     val id: Int,
     val name: String,
@@ -55,7 +62,8 @@ data class LocationProfile(
     val imageUrl: String,
     val occupation: String,
     val interests: List<String>,
-    val photos: List<String>
+    val photos: List<String>,
+    var state: ProfileState = ProfileState.ACTIVE
 )
 
 // Mock profile images
@@ -75,7 +83,8 @@ fun LocationDetailScreen(
     locationName: String,
     locationType: LocationType,
     buzzInCount: Int,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    description: String? = null
 ) {
     val icon: ImageVector = if (locationType == LocationType.COFFEE) {
         Icons.Default.Coffee
@@ -84,62 +93,110 @@ fun LocationDetailScreen(
     }
     
     val typeLabel = if (locationType == LocationType.COFFEE) "Coffee Shop" else "Restaurant"
-    
-    val description = if (locationType == LocationType.COFFEE) {
-        "A cozy coffee shop perfect for casual meetups and first dates. Enjoy artisan coffee and a relaxed atmosphere."
-    } else {
-        "A wonderful dining experience awaits. Great ambiance for dates and getting to know someone over delicious food."
-    }
 
     val bioCoffee = "Coffee enthusiast looking to meet new people ☕"
     val bioRestaurant = "Foodie who loves trying new restaurants 🍽️"
-    
+
     var selectedProfile by remember { mutableStateOf<LocationProfile?>(null) }
+    var selectedProfileIndex by remember { mutableStateOf<Int?>(null) }
+    var showSelfieCapture by remember { mutableStateOf(false) }
+    var selfieCaptureProfileName by remember { mutableStateOf("") }
     
     // Generate mock profiles with multiple photos
-    val profiles = List(buzzInCount) { i ->
-        val mainPhoto = profileImages[i % profileImages.size]
-        val otherPhotos = profileImages.filterIndexed { idx, _ -> idx != (i % profileImages.size) }
-        
-        LocationProfile(
-            id = i + 1,
-            name = names[i % names.size],
-            age = 24 + (i % 10),
-            bio = if (locationType == LocationType.COFFEE) bioCoffee else bioRestaurant,
-            imageUrl = mainPhoto,
-            occupation = if (locationType == LocationType.COFFEE) "Designer" else "Marketing Manager",
-            interests = if (locationType == LocationType.COFFEE)
-                listOf("Coffee", "Art", "Music", "Reading")
-            else
-                listOf("Foodie", "Travel", "Cooking", "Wine"),
-            photos = listOf(mainPhoto) + otherPhotos.take(2)
-        )
+    var profiles by remember {
+        mutableStateOf(List(buzzInCount) { i ->
+            val mainPhoto = profileImages[i % profileImages.size]
+            val otherPhotos = profileImages.filterIndexed { idx, _ -> idx != (i % profileImages.size) }
+
+            LocationProfile(
+                id = i + 1,
+                name = names[i % names.size],
+                age = 24 + (i % 10),
+                bio = if (locationType == LocationType.COFFEE) bioCoffee else bioRestaurant,
+                imageUrl = mainPhoto,
+                occupation = if (locationType == LocationType.COFFEE) "Designer" else "Marketing Manager",
+                interests = if (locationType == LocationType.COFFEE)
+                    listOf("Coffee", "Art", "Music", "Reading")
+                else
+                    listOf("Foodie", "Travel", "Cooking", "Wine"),
+                photos = listOf(mainPhoto) + otherPhotos.take(2),
+                state = ProfileState.ACTIVE
+            )
+        })
     }
 
     val pagerState = rememberPagerState(pageCount = { profiles.size })
     val coroutineScope = rememberCoroutineScope()
     
-    // Show full-screen profile view if selected
-    selectedProfile?.let { profile ->
-        FullScreenProfileView(
-            profile = profile,
-            locationName = locationName,
-            onBack = { 
-                selectedProfile = null
+    // Show selfie capture screen if triggered
+    if (showSelfieCapture) {
+        SelfieCaptureScreen(
+            profileName = selfieCaptureProfileName,
+            locationType = locationType.name, // Pass "COFFEE" or "RESTAURANT"
+            onBack = {
+                showSelfieCapture = false
             },
-            onAccept = {
-                selectedProfile = null
-                coroutineScope.launch {
-                    if (pagerState.currentPage < profiles.size - 1) {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+            onSelfieCaptured = {
+                showSelfieCapture = false
+                // Get the page index - either from full-screen view or from pager
+                val pageIndex = selectedProfileIndex ?: pagerState.currentPage
+
+                // Move to next profile
+                if (pageIndex < profiles.size - 1) {
+                    // If we're in full-screen mode, update selectedProfileIndex
+                    if (selectedProfileIndex != null) {
+                        selectedProfileIndex = pageIndex + 1
+                    }
+                    // Advance the pager to next profile
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pageIndex + 1)
+                    }
+                } else {
+                    // If this was the last profile and we're in full-screen, close it
+                    if (selectedProfileIndex != null) {
+                        selectedProfileIndex = null
                     }
                 }
+            }
+        )
+        return
+    }
+    
+    // Show full-screen profile view if selected
+    selectedProfileIndex?.let { index ->
+        FullScreenProfileView(
+            profile = profiles[index],
+            locationName = locationName,
+            onBack = {
+                selectedProfileIndex = null
+            },
+            onAccept = {
+                android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profiles[index].name}")
+                // Update profile state to ACCEPTED
+                profiles = profiles.toMutableList().also { list ->
+                    list[index] = list[index].copy(state = ProfileState.ACCEPTED)
+                }
+                selfieCaptureProfileName = profiles[index].name
+                showSelfieCapture = true
             },
             onReject = {
-                selectedProfile = null
-                coroutineScope.launch {
-                    if (pagerState.currentPage < profiles.size - 1) {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                android.util.Log.d("LocationDetailScreen", "Reject button pressed for ${profiles[index].name}")
+                // Update profile state to REJECTED
+                profiles = profiles.toMutableList().also { list ->
+                    list[index] = list[index].copy(state = ProfileState.REJECTED)
+                }
+                // Move to next profile and keep showing in full screen
+                if (index < profiles.size - 1) {
+                    selectedProfileIndex = index + 1
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(index + 1)
+                    }
+                } else {
+                    // If this was the last profile, close full screen view
+                    selectedProfileIndex = null
+                    // Ensure pager stays on the last profile
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(index)
                     }
                 }
             }
@@ -158,39 +215,63 @@ fun LocationDetailScreen(
             shadowElevation = 1.dp,
             color = Color.White
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
+                // Location Name
                 Text(
                     text = locationName,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
                 
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = Color(0xFFFEF3C7),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                // Buzz Ins Count and Buzz Out Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // Buzz Ins Pill
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = Color(0xFFFEF3C7),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = buzzInCount.toString(),
+                                color = Color(0xFFCA8A04),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Buzz Ins",
+                                color = Color(0xFFCA8A04),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                    
+                    // Buzz Out Button
+                    Button(
+                        onClick = onBack,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFACC15),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.height(36.dp)
                     ) {
                         Text(
-                            text = buzzInCount.toString(),
-                            color = Color(0xFFCA8A04),
-                            fontSize = 14.sp,
+                            text = "Buzz Out",
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "Buzz Ins",
-                            color = Color(0xFFCA8A04),
-                            fontSize = 12.sp
                         )
                     }
                 }
@@ -204,77 +285,22 @@ fun LocationDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            // Buzzed In Status Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 12.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFACC15))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "You're buzzed in!",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Others can see your profile here",
-                                color = Color.White.copy(alpha = 0.9f),
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = onBack,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color(0xFFCA8A04)
-                        ),
-                        modifier = Modifier.height(36.dp)
-                    ) {
-                        Text(
-                            text = "Buzz Out",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
+            // Description (only show if description is not null)
+            description?.let { desc ->
+                Text(
+                    text = "About this location",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                )
+                Text(
+                    text = desc,
+                    color = Color(0xFF64748B),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
             }
-
-            // Description
-            Text(
-                text = "About this location",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            Text(
-                text = description,
-                color = Color(0xFF64748B),
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
 
             // People Section Header
             Text(
@@ -303,16 +329,24 @@ fun LocationDetailScreen(
                     ProfileCard(
                         profile = profile,
                         onClick = {
-                            selectedProfile = profile
+                            selectedProfileIndex = page
                         },
                         onAccept = {
-                            coroutineScope.launch {
-                                if (page < profiles.size - 1) {
-                                    pagerState.animateScrollToPage(page + 1)
-                                }
+                            android.util.Log.d("LocationDetailScreen", "Accept button pressed for ${profile.name}")
+                            // Update profile state to ACCEPTED
+                            profiles = profiles.toMutableList().also { list ->
+                                list[page] = list[page].copy(state = ProfileState.ACCEPTED)
                             }
+                            selfieCaptureProfileName = profile.name
+                            showSelfieCapture = true
                         },
                         onReject = {
+                            android.util.Log.d("LocationDetailScreen", "Reject button pressed for ${profile.name}")
+                            // Update profile state to REJECTED
+                            profiles = profiles.toMutableList().also { list ->
+                                list[page] = list[page].copy(state = ProfileState.REJECTED)
+                            }
+                            // Auto-advance to next profile after a brief moment
                             coroutineScope.launch {
                                 if (page < profiles.size - 1) {
                                     pagerState.animateScrollToPage(page + 1)
@@ -370,7 +404,7 @@ fun ProfileCard(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
-                
+
                 // Gradient Overlay
                 Box(
                     modifier = Modifier
@@ -387,7 +421,16 @@ fun ProfileCard(
                             )
                         )
                 )
-                
+
+                // Greyed out overlay when accepted/rejected
+                if (profile.state != ProfileState.ACTIVE) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.6f))
+                    )
+                }
+
                 // Profile Info and Buttons
                 Column(
                     modifier = Modifier
@@ -408,47 +451,80 @@ fun ProfileCard(
                         fontSize = 14.sp,
                         modifier = Modifier.padding(bottom = 24.dp)
                     )
-                    
-                    // Action Buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Reject Button
-                        FloatingActionButton(
-                            onClick = onReject,
-                            modifier = Modifier.size(64.dp),
-                            containerColor = Color.White,
-                            elevation = FloatingActionButtonDefaults.elevation(
-                                defaultElevation = 8.dp
-                            )
+
+                    // Show state label when not active
+                    if (profile.state == ProfileState.ACCEPTED) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFF22C55E),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Reject",
-                                tint = Color(0xFFEF4444),
-                                modifier = Modifier.size(32.dp)
+                            Text(
+                                text = "ACCEPTED",
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(16.dp),
+                                textAlign = TextAlign.Center
                             )
                         }
-                        
-                        Spacer(modifier = Modifier.width(48.dp))
-                        
-                        // Accept Button
-                        FloatingActionButton(
-                            onClick = onAccept,
-                            modifier = Modifier.size(64.dp),
-                            containerColor = Color(0xFFFACC15),
-                            elevation = FloatingActionButtonDefaults.elevation(
-                                defaultElevation = 8.dp
-                            )
+                    } else if (profile.state == ProfileState.REJECTED) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFFF97316),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Favorite,
-                                contentDescription = "Accept",
-                                tint = Color.White,
-                                modifier = Modifier.size(32.dp)
+                            Text(
+                                text = "PASSED",
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(16.dp),
+                                textAlign = TextAlign.Center
                             )
+                        }
+                    } else {
+                        // Action Buttons (only show when ACTIVE)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Reject Button
+                            FloatingActionButton(
+                                onClick = onReject,
+                                modifier = Modifier.size(64.dp),
+                                containerColor = Color.White,
+                                elevation = FloatingActionButtonDefaults.elevation(
+                                    defaultElevation = 8.dp
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Reject",
+                                    tint = Color(0xFFEF4444),
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(48.dp))
+
+                            // Accept Button
+                            FloatingActionButton(
+                                onClick = onAccept,
+                                modifier = Modifier.size(64.dp),
+                                containerColor = Color(0xFFFACC15),
+                                elevation = FloatingActionButtonDefaults.elevation(
+                                    defaultElevation = 8.dp
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = "Accept",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -601,47 +677,80 @@ fun FullScreenProfileView(
                     }
                     
                     Spacer(modifier = Modifier.height(24.dp))
-                    
-                    // Action Buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Reject Button
-                        FloatingActionButton(
-                            onClick = onReject,
-                            modifier = Modifier.size(56.dp),
-                            containerColor = Color.White,
-                            elevation = FloatingActionButtonDefaults.elevation(
-                                defaultElevation = 8.dp
-                            )
+
+                    // Show state label when not active
+                    if (profile.state == ProfileState.ACCEPTED) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFF22C55E),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Reject",
-                                tint = Color(0xFFEF4444),
-                                modifier = Modifier.size(24.dp)
+                            Text(
+                                text = "ACCEPTED",
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(16.dp),
+                                textAlign = TextAlign.Center
                             )
                         }
-                        
-                        Spacer(modifier = Modifier.width(48.dp))
-                        
-                        // Accept Button
-                        FloatingActionButton(
-                            onClick = onAccept,
-                            modifier = Modifier.size(56.dp),
-                            containerColor = Color(0xFFFACC15),
-                            elevation = FloatingActionButtonDefaults.elevation(
-                                defaultElevation = 8.dp
-                            )
+                    } else if (profile.state == ProfileState.REJECTED) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFFF97316),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Favorite,
-                                contentDescription = "Accept",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
+                            Text(
+                                text = "PASSED",
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(16.dp),
+                                textAlign = TextAlign.Center
                             )
+                        }
+                    } else {
+                        // Action Buttons (only show when ACTIVE)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Reject Button
+                            FloatingActionButton(
+                                onClick = onReject,
+                                modifier = Modifier.size(56.dp),
+                                containerColor = Color.White,
+                                elevation = FloatingActionButtonDefaults.elevation(
+                                    defaultElevation = 8.dp
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Reject",
+                                    tint = Color(0xFFEF4444),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(48.dp))
+
+                            // Accept Button
+                            FloatingActionButton(
+                                onClick = onAccept,
+                                modifier = Modifier.size(56.dp),
+                                containerColor = Color(0xFFFACC15),
+                                elevation = FloatingActionButtonDefaults.elevation(
+                                    defaultElevation = 8.dp
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = "Accept",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
                 }
