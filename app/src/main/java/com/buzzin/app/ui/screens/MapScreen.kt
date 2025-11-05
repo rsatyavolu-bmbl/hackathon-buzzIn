@@ -1,5 +1,9 @@
 package com.buzzin.app.ui.screens
 
+import android.Manifest
+import android.annotation.SuppressLint
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -13,12 +17,22 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.tasks.CancellationTokenSource
+import com.google.android.libraries.places.api.Places
+import com.google.android.libraries.places.api.model.Place
+import com.google.android.libraries.places.api.model.CircularBounds
+import com.google.android.libraries.places.api.net.SearchNearbyRequest
 import com.google.maps.android.compose.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 // Sample data for social places
 data class SocialPlace(
@@ -36,15 +50,81 @@ enum class PlaceType {
     CONCERT
 }
 
-// Sample places near 41st and Lamar in Austin, TX
-val socialPlaces = listOf(
-    SocialPlace(1, "Houndstooth Coffee", PlaceType.COFFEE, LatLng(30.3106, -97.74), 4),
-    SocialPlace(2, "Draught House Pub", PlaceType.BAR, LatLng(30.3111, -97.7428), 9),
-    SocialPlace(3, "Central Market North Lamar", PlaceType.RESTAURANT, LatLng(30.3077, -97.7399), 4),
-    SocialPlace(4, "Mazur Coffee", PlaceType.COFFEE, LatLng(30.31165, -97.7423), 3),
-    SocialPlace(5, "Rudys BBQ", PlaceType.RESTAURANT, LatLng(30.3076, -97.74195), 7)
-)
+// Function to fetch nearby places using Google Places API (New)
+suspend fun fetchNearbyPlaces(
+    context: android.content.Context,
+    location: LatLng,
+    apiKey: String
+): List<SocialPlace> {
+    return try {
+        android.util.Log.d("MapScreen", "Starting to fetch nearby places at location: ${location.latitude}, ${location.longitude}")
+        android.util.Log.d("MapScreen", "API Key available: ${apiKey.isNotEmpty()}")
 
+        // Initialize Places API if not already initialized
+        if (!Places.isInitialized()) {
+            android.util.Log.d("MapScreen", "Initializing Places API")
+            Places.initialize(context, apiKey)
+        }
+
+        val placesClient = Places.createClient(context)
+
+        // Define fields to return in Place objects
+        val placeFields = listOf(
+            Place.Field.ID,
+            Place.Field.NAME,
+            Place.Field.LAT_LNG,
+            Place.Field.TYPES
+        )
+
+        // Create circular search area: 0.002 degrees ≈ 222 meters radius
+        val circle = CircularBounds.newInstance(location, 222.0)
+
+        // Specify place types to include
+        val includedTypes = listOf("restaurant", "cafe", "bar")
+
+        // Build the search request using SearchNearbyRequest (NEW API)
+        android.util.Log.d("MapScreen", "Creating SearchNearbyRequest with NEW Places API")
+        val searchNearbyRequest = SearchNearbyRequest.builder(circle, placeFields)
+            .setIncludedTypes(includedTypes)
+            .setMaxResultCount(5)
+            .build()
+
+        // Execute search
+        android.util.Log.d("MapScreen", "Executing searchNearby request")
+        val response = placesClient.searchNearby(searchNearbyRequest).await()
+
+        android.util.Log.d("MapScreen", "Received ${response.places.size} places from API")
+
+        // Convert results to SocialPlace objects
+        val socialPlaces = response.places.map { place ->
+            val types = place.placeTypes ?: emptyList()
+            android.util.Log.d("MapScreen", "Place: ${place.name}, Types: $types")
+
+            val placeType = when {
+                types.contains("cafe") -> PlaceType.COFFEE
+                types.contains("bar") -> PlaceType.BAR
+                types.contains("restaurant") -> PlaceType.RESTAURANT
+                else -> PlaceType.RESTAURANT
+            }
+
+            SocialPlace(
+                id = place.id.hashCode(),
+                name = place.name ?: "Unknown Place",
+                type = placeType,
+                location = place.latLng ?: location,
+                activeUsers = (1..10).random()
+            )
+        }
+
+        android.util.Log.d("MapScreen", "Returning ${socialPlaces.size} places")
+        socialPlaces
+    } catch (e: Exception) {
+        android.util.Log.e("MapScreen", "Error fetching nearby places: ${e.message}", e)
+        emptyList()
+    }
+}
+
+@SuppressLint("MissingPermission")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
@@ -52,16 +132,74 @@ fun MapScreen(
     onBuzzIn: (Int, String, LocationType, Int) -> Unit = { _, _, _, _ -> },
     onBuzzOut: () -> Unit = {}
 ) {
-    // Default location: 41st and Lamar, Austin, TX
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+
+    // Default location: 41st and Lamar, Austin, TX (used as fallback)
     val center41stAndLamar = LatLng(30.30914, -97.7412)
+    var userLocation by remember { mutableStateOf<LatLng?>(null) }
+    var locationPermissionGranted by remember { mutableStateOf(false) }
+    var nearbyPlaces by remember { mutableStateOf<List<SocialPlace>>(emptyList()) }
+
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(center41stAndLamar, 16f)
     }
-    
+
     var selectedPlace by remember { mutableStateOf<SocialPlace?>(null) }
     var showLocationDetail by remember { mutableStateOf(false) }
-    // Disable My Location for now (requires runtime permissions)
-    var showMyLocation by remember { mutableStateOf(false) }
+
+    // Location permission launcher
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        locationPermissionGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                                    permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+        if (locationPermissionGranted) {
+            // Get user location when permission is granted
+            scope.launch {
+                try {
+                    val cancellationTokenSource = CancellationTokenSource()
+                    val location = fusedLocationClient.getCurrentLocation(
+                        Priority.PRIORITY_HIGH_ACCURACY,
+                        cancellationTokenSource.token
+                    ).await()
+
+                    location?.let { loc ->
+                        val newLocation = LatLng(loc.latitude, loc.longitude)
+                        userLocation = newLocation
+                        android.util.Log.d("MapScreen", "User location obtained: ${newLocation.latitude}, ${newLocation.longitude}")
+
+                        // Center camera on user location
+                        cameraPositionState.position = CameraPosition.fromLatLngZoom(newLocation, 16f)
+
+                        // Fetch nearby places
+                        val apiKey = context.packageManager
+                            .getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
+                            .metaData
+                            .getString("com.google.android.geo.API_KEY") ?: ""
+                        android.util.Log.d("MapScreen", "About to fetch nearby places after getting location")
+                        nearbyPlaces = fetchNearbyPlaces(context, newLocation, apiKey)
+                        android.util.Log.d("MapScreen", "Fetched ${nearbyPlaces.size} nearby places")
+                    }
+                } catch (e: Exception) {
+                    // Handle location fetch error
+                    android.util.Log.e("MapScreen", "Error getting location", e)
+                }
+            }
+        }
+    }
+
+    // Request location permission on first composition
+    LaunchedEffect(Unit) {
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
+    }
 
     // Show LocationDetailScreen if user is buzzed in
     if (buzzInState.isBuzzedIn) {
@@ -142,7 +280,7 @@ fun MapScreen(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
-                    isMyLocationEnabled = showMyLocation,
+                    isMyLocationEnabled = locationPermissionGranted,
                     mapType = MapType.NORMAL
                 ),
                 uiSettings = MapUiSettings(
@@ -155,16 +293,18 @@ fun MapScreen(
                     rotationGesturesEnabled = true
                 )
             ) {
-                // User's current location marker
-                Marker(
-                    state = MarkerState(position = center41stAndLamar),
-                    title = "You are here",
-                    snippet = "Your current location",
-                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)
-                )
+                // User's current location marker (custom blue marker)
+                userLocation?.let { location ->
+                    Marker(
+                        state = MarkerState(position = location),
+                        title = "You are here",
+                        snippet = "Your current location",
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)
+                    )
+                }
 
-                // Add markers for each social place
-                socialPlaces.forEach { place ->
+                // Add markers for each nearby place
+                nearbyPlaces.forEach { place ->
                     Marker(
                         state = MarkerState(position = place.location),
                         title = place.name,
@@ -181,8 +321,19 @@ fun MapScreen(
         // Floating Action Button - My Location
         FloatingActionButton(
             onClick = {
-                // Center map on 41st and Lamar
-                cameraPositionState.position = CameraPosition.fromLatLngZoom(center41stAndLamar, 16f)
+                // Center map on user's location if available, otherwise fallback to default
+                val targetLocation = userLocation ?: center41stAndLamar
+                cameraPositionState.position = CameraPosition.fromLatLngZoom(targetLocation, 16f)
+
+                // Fetch nearby places when button is clicked
+                scope.launch {
+                    val apiKey = context.packageManager
+                        .getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
+                        .metaData
+                        .getString("com.google.android.geo.API_KEY") ?: ""
+                    android.util.Log.d("MapScreen", "My Location button clicked, fetching places")
+                    nearbyPlaces = fetchNearbyPlaces(context, targetLocation, apiKey)
+                }
             },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
