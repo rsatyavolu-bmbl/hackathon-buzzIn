@@ -46,45 +46,46 @@ fun MainScreen() {
     Scaffold(
         bottomBar = {
             NavigationBar(
-                containerColor = Color.White,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
                 tonalElevation = 8.dp
             ) {
                 // Profile
                 NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Person, contentDescription = "Profile") },
-                    label = { Text("Profile") },
+                    icon = { Icon(Icons.Filled.Person, contentDescription = "Profile", tint = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                    label = { Text("Profile", color = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 }
                 )
                 
                 // Discover
                 NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Favorite, contentDescription = "Discover") },
-                    label = { Text("Discover") },
+                    icon = { Icon(Icons.Filled.Favorite, contentDescription = "Discover", tint = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                    label = { Text("Discover", color = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 }
                 )
                 
                 // Buzz In
                 NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Place, contentDescription = "Buzz In") },
-                    label = { Text("Buzz In") },
+                    icon = { Icon(Icons.Filled.Place, contentDescription = "Buzz In", tint = if (selectedTab == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                    label = { Text("Buzz In", color = if (selectedTab == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 }
                 )
                 
                 // Liked You
                 NavigationBarItem(
-                    icon = { Icon(Icons.Filled.FavoriteBorder, contentDescription = "Liked You") },
-                    label = { Text("Liked You") },
+                    icon = { Icon(Icons.Filled.FavoriteBorder, contentDescription = "Liked You", tint = if (selectedTab == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                    label = { Text("Liked You", color = if (selectedTab == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 }
                 )
                 
                 // Chats
                 NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Email, contentDescription = "Chats") },
-                    label = { Text("Chats") },
+                    icon = { Icon(Icons.Filled.Email, contentDescription = "Chats", tint = if (selectedTab == 4) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                    label = { Text("Chats", color = if (selectedTab == 4) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
                     selected = selectedTab == 4,
                     onClick = { selectedTab = 4 }
                 )

@@ -32,11 +32,13 @@ fun ProfileScreen() {
             title = { Text("Profile", fontWeight = FontWeight.Bold) },
             actions = {
                 IconButton(onClick = { /* Settings */ }) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.Black)
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.White
+                containerColor = Color.White,
+                titleContentColor = Color.Black,
+                actionIconContentColor = Color.Black
             )
         )
 

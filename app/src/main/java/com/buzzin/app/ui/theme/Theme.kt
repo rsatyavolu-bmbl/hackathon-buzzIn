@@ -20,7 +20,11 @@ private val DarkColorScheme = darkColorScheme(
     secondary = BuzzInYellow,
     tertiary = BuzzInPink,
     background = BuzzInDarkBackground,
-    surface = BuzzInDarkSurface
+    surface = BuzzInDarkSurface,
+    onBackground = androidx.compose.ui.graphics.Color.White,
+    onSurface = androidx.compose.ui.graphics.Color.White,
+    onPrimary = androidx.compose.ui.graphics.Color.White,
+    onSecondary = androidx.compose.ui.graphics.Color.Black
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -28,13 +32,18 @@ private val LightColorScheme = lightColorScheme(
     secondary = BuzzInYellow,
     tertiary = BuzzInPink,
     background = BuzzInLightBackground,
-    surface = BuzzInLightSurface
+    surface = BuzzInLightSurface,
+    onBackground = androidx.compose.ui.graphics.Color.Black,
+    onSurface = androidx.compose.ui.graphics.Color.Black,
+    onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF5F5F5F),
+    onPrimary = androidx.compose.ui.graphics.Color.White,
+    onSecondary = androidx.compose.ui.graphics.Color.Black
 )
 
 @Composable
 fun BuzzInTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    darkTheme: Boolean = false, // Force light theme for consistent appearance
+    dynamicColor: Boolean = false, // Disabled to ensure consistent colors across devices
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

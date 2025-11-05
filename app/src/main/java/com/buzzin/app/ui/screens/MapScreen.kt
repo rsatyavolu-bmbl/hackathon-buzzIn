@@ -943,11 +943,13 @@ fun MapScreen(
                 },
                 actions = {
                     IconButton(onClick = { /* Settings */ }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.Black)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.White
+                    containerColor = Color.White,
+                    titleContentColor = Color.Black,
+                    actionIconContentColor = Color.Black
                 )
             )
 
@@ -1126,7 +1128,8 @@ fun MapScreen(
                             Text(
                                 text = place.name,
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1170,7 +1173,7 @@ fun MapScreen(
                                     text = "${place.activeUsers} buzzed in",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    color = Color.Black
                                 )
                             }
                         }
