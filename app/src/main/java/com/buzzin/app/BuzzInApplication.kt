@@ -25,8 +25,7 @@ class BuzzInApplication : Application() {
         Log.d(TAG, "Android Device ID: ${metadata.androidDeviceId}")
 
         // Initialize AWS Amplify
-        // TODO: Uncomment when amplify_outputs.json is available
-        // configureAmplify()
+        configureAmplify()
 
         // Initialize other SDKs as needed
     }
@@ -36,8 +35,7 @@ class BuzzInApplication : Application() {
             // Only add API plugin for now (no auth, no S3 for MVP)
             Amplify.addPlugin(AWSApiPlugin())
             // Gen 2 configuration using amplify_outputs.json
-            // TODO: Uncomment when amplify_outputs.json is available in res/raw/
-            // Amplify.configure(AmplifyOutputs(R.raw.amplify_outputs), applicationContext)
+            Amplify.configure(AmplifyOutputs(R.raw.amplify_outputs), applicationContext)
             Log.i(TAG, "Initialized Amplify Gen 2 successfully")
         } catch (error: AmplifyException) {
             Log.e(TAG, "Could not initialize Amplify", error)
