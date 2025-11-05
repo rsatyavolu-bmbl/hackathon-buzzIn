@@ -48,4 +48,7 @@
     <!-- Notifications -->
     <string name="notification_new_match">You have a new match nearby!</string>
     <string name="notification_nearby_user">Someone just buzzed in near you!</string>
+
+    <!-- API Keys -->
+    <string name="maps_api_key">AIzaSyC0yUS3dkrmGM_Vl9eAnZS4jve2S6Ok16c</string>
 </resources>

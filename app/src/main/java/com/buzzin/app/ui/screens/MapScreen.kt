@@ -29,6 +29,11 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.tasks.CancellationTokenSource
+import com.google.android.libraries.places.api.Places
+import com.google.android.libraries.places.api.model.CircularBounds
+import com.google.android.libraries.places.api.model.Place
+import com.google.android.libraries.places.api.net.PlacesClient
+import com.google.android.libraries.places.api.net.SearchNearbyRequest
 import com.google.maps.android.compose.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,6 +41,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
 
 // Sample data for social places
 data class SocialPlace(
@@ -55,6 +61,177 @@ enum class PlaceType {
     PARK,
     GYM,
     OTHER
+}
+
+// Function to save a location to the backend database
+suspend fun saveLocationToBackend(
+    id: String,
+    name: String,
+    latitude: Double,
+    longitude: Double,
+    address: String,
+    type: PlaceType
+): Boolean {
+    return withContext(Dispatchers.IO) {
+        try {
+            val mutation = """
+                mutation CreateLocation {
+                  createLocation(input: {
+                    id: "$id",
+                    name: "${name.replace("\"", "\\\"")}",
+                    latitude: $latitude,
+                    longitude: $longitude,
+                    address: "${address.replace("\"", "\\\"")}",
+                    type: $type
+                  }) {
+                    id
+                    name
+                  }
+                }
+            """.trimIndent()
+
+            var success = false
+            var error: Exception? = null
+
+            val request = com.amplifyframework.api.graphql.SimpleGraphQLRequest<String>(
+                mutation,
+                emptyMap<String, Any>(),
+                String::class.java,
+                com.amplifyframework.api.graphql.GraphQLRequest.VariablesSerializer { "{}" }
+            )
+
+            Amplify.API.mutate(
+                request,
+                { response ->
+                    Log.d("MapScreen", "Location saved: ${response.data}")
+                    success = true
+                },
+                { err ->
+                    // Check if error is "duplicate key" which means it already exists
+                    val errorMsg = err.toString()
+                    if (errorMsg.contains("duplicate") || errorMsg.contains("already exists")) {
+                        Log.d("MapScreen", "Location already exists: $id")
+                        success = true // Treat as success
+                    } else {
+                        Log.e("MapScreen", "Failed to save location", err)
+                        error = Exception(err.toString())
+                    }
+                }
+            )
+
+            var timeout = 0
+            while (!success && error == null && timeout < 50) {
+                Thread.sleep(100)
+                timeout++
+            }
+
+            if (error != null) throw error!!
+            success
+        } catch (e: Exception) {
+            Log.e("MapScreen", "Error saving location to backend", e)
+            false
+        }
+    }
+}
+
+// Function to search Places API and save to backend
+suspend fun searchAndSavePlacesFromGoogle(
+    placesClient: PlacesClient,
+    center: LatLng,
+    radiusMeters: Double = 5000.0
+): List<SocialPlace> {
+    return withContext(Dispatchers.IO) {
+        try {
+            Log.d("MapScreen", "Searching Google Places near ${center.latitude}, ${center.longitude}")
+
+            val placeFields = listOf(
+                Place.Field.ID,
+                Place.Field.NAME,
+                Place.Field.LAT_LNG,
+                Place.Field.ADDRESS,
+                Place.Field.TYPES
+            )
+
+            // Search for restaurants, cafes, and bars
+            val includedTypes = listOf(
+                "restaurant",
+                "cafe",
+                "bar",
+                "night_club"
+            )
+
+            val circle = CircularBounds.newInstance(center, radiusMeters)
+
+            val searchRequest = SearchNearbyRequest.builder(circle, placeFields)
+                .setIncludedTypes(includedTypes)
+                .setMaxResultCount(20)
+                .build()
+
+            val searchTask = placesClient.searchNearby(searchRequest)
+            val searchResponse = searchTask.await()
+
+            val places = searchResponse.places
+            Log.d("MapScreen", "Found ${places.size} places from Google Places API")
+
+            val socialPlaces = mutableListOf<SocialPlace>()
+
+            for (place in places) {
+                try {
+                    val placeLatLng = place.latLng ?: continue
+                    val placeName = place.name ?: "Unknown Place"
+                    val placeAddress = place.address ?: ""
+                    val placeId = place.id ?: UUID.randomUUID().toString()
+
+                    // Determine place type from Google types
+                    val placeType = when {
+                        place.placeTypes?.any { it.contains("cafe") || it.contains("coffee") } == true -> PlaceType.COFFEE
+                        place.placeTypes?.any { it.contains("bar") || it.contains("night_club") } == true -> PlaceType.BAR
+                        place.placeTypes?.any { it.contains("restaurant") } == true -> PlaceType.RESTAURANT
+                        else -> PlaceType.OTHER
+                    }
+
+                    // Generate a consistent backend ID
+                    val backendId = "google-place-${placeId}"
+
+                    // Save to backend (async, don't block on errors)
+                    try {
+                        saveLocationToBackend(
+                            id = backendId,
+                            name = placeName,
+                            latitude = placeLatLng.latitude,
+                            longitude = placeLatLng.longitude,
+                            address = placeAddress,
+                            type = placeType
+                        )
+                        Log.d("MapScreen", "Saved place to backend: $placeName")
+                    } catch (e: Exception) {
+                        Log.w("MapScreen", "Failed to save place to backend: $placeName", e)
+                        // Continue anyway - we can still show the place
+                    }
+
+                    socialPlaces.add(
+                        SocialPlace(
+                            id = backendId,
+                            name = placeName,
+                            type = placeType,
+                            location = LatLng(placeLatLng.latitude, placeLatLng.longitude),
+                            activeUsers = 0, // Will be updated later
+                            address = placeAddress
+                        )
+                    )
+                } catch (e: Exception) {
+                    Log.e("MapScreen", "Error processing place", e)
+                }
+            }
+
+            Log.d("MapScreen", "Processed ${socialPlaces.size} places")
+            socialPlaces
+
+        } catch (e: Exception) {
+            Log.e("MapScreen", "Error searching Google Places", e)
+            emptyList()
+        }
+    }
 }
 
 // Function to fetch nearby locations from Amplify API
@@ -350,6 +527,15 @@ fun MapScreen(
     val coroutineScope = rememberCoroutineScope()
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
 
+    // Initialize Places API
+    val placesClient = remember {
+        if (!Places.isInitialized()) {
+            val apiKey = context.getString(context.resources.getIdentifier("maps_api_key", "string", context.packageName))
+            Places.initialize(context, apiKey)
+        }
+        Places.createClient(context)
+    }
+
     // Default location: 41st and Lamar, Austin, TX (used as fallback)
     val center41stAndLamar = LatLng(30.30914, -97.7412)
     var userLocation by remember { mutableStateOf<LatLng?>(null) }
@@ -387,10 +573,10 @@ fun MapScreen(
                         // Center camera on user location
                         cameraPositionState.position = CameraPosition.fromLatLngZoom(newLocation, 16f)
 
-                        // Fetch nearby locations from AWS backend using real GPS location
-                        Log.d("MapScreen", "Fetching nearby locations from AWS using real GPS")
-                        nearbyPlaces = fetchNearbyLocations(newLocation.latitude, newLocation.longitude, radiusKm = 10.0)
-                        Log.d("MapScreen", "Fetched ${nearbyPlaces.size} nearby locations from AWS")
+                        // Fetch nearby locations from Google Places and save to backend
+                        Log.d("MapScreen", "Searching Google Places and saving to backend")
+                        nearbyPlaces = searchAndSavePlacesFromGoogle(placesClient, newLocation, radiusMeters = 5000.0)
+                        Log.d("MapScreen", "Found and saved ${nearbyPlaces.size} nearby locations")
                     }
                 } catch (e: Exception) {
                     // Handle location fetch error
@@ -565,14 +751,14 @@ fun MapScreen(
         errorMessage = null
         try {
             val targetLocation = userLocation ?: center41stAndLamar
-            val fetchedLocations = fetchNearbyLocations(
-                targetLocation.latitude,
-                targetLocation.longitude,
-                radiusKm = 10.0
+            val fetchedLocations = searchAndSavePlacesFromGoogle(
+                placesClient,
+                targetLocation,
+                radiusMeters = 5000.0
             )
             nearbyPlaces = fetchedLocations
             socialPlaces = fetchedLocations
-            Log.d("MapScreen", "Reloaded ${fetchedLocations.size} locations from API")
+            Log.d("MapScreen", "Reloaded ${fetchedLocations.size} locations from Google Places")
         } catch (e: Exception) {
             Log.e("MapScreen", "Error reloading locations", e)
             errorMessage = "Failed to reload locations: ${e.message}"
@@ -581,19 +767,20 @@ fun MapScreen(
         }
     }
 
-    // Fetch locations from API when screen loads
+    // Fetch locations from Google Places API when screen loads
     LaunchedEffect(Unit) {
         isLoading = true
         errorMessage = null
         try {
-            val fetchedLocations = fetchNearbyLocations(
-                center41stAndLamar.latitude,
-                center41stAndLamar.longitude,
-                radiusKm = 10.0
+            Log.d("MapScreen", "Initial load: Searching Google Places")
+            val fetchedLocations = searchAndSavePlacesFromGoogle(
+                placesClient,
+                center41stAndLamar,
+                radiusMeters = 5000.0
             )
             nearbyPlaces = fetchedLocations
             socialPlaces = fetchedLocations
-            Log.d("MapScreen", "Loaded ${fetchedLocations.size} locations from API")
+            Log.d("MapScreen", "Loaded ${fetchedLocations.size} locations from Google Places")
             if (fetchedLocations.isEmpty()) {
                 errorMessage = "No locations found nearby"
             }
