@@ -562,7 +562,7 @@ fun LocationDetailScreen(
             }
             profileConnectionStatuses = statuses
             
-            kotlinx.coroutines.delay(15000) // Update every 15 seconds
+            kotlinx.coroutines.delay(5000) // Update every 5 seconds
         }
     }
 
